@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="../images/task1.gif" alt="Task 1 planar pushing execution examples" width="520"/>
+</p>
+
 <img src="../images/t1_overview01.png" alt="Task 1 planar pushing execution examples" width="950"/>
 
 # Task 1 — Model-Based Closed-Loop Planar Pushing
