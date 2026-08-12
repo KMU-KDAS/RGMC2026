@@ -199,7 +199,7 @@ $$
 Canonical T template의 꼭짓점을 $p_i$, 실제 target 꼭짓점을 $q_i$라고 하면, 두 형상을 가장 잘 겹치게 만드는 회전과 이동을 찾는다.
 
 $$
-R^*,t^*=\arg\min_{R,t}\sum_i\|Rp_i+t-q_i\|^2
+R^{*},t^{*}=\arg\min_{R,t}\sum_i\|Rp_i+t-q_i\|^2
 $$
 
 이 정합은 다음 의미를 가진다.
@@ -233,6 +233,8 @@ Rigid alignment이 안정적으로 동작하려면 current와 target의 8개 ver
 | Mean step at max IoU | **10.1** |
 
 이 결과는 geometry correction만으로 전체 Task 1이 완성되는 것은 아니라는 점을 보여준다. 이후 candidate scoring, approach path와 execution time 개선이 추가되면서 최종 평가에서 T와 T-long은 각각 **52.24**, **57.21**의 Top-3 average score를 기록했다.
+
+---
 
 ---
 
