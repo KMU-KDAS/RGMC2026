@@ -2,7 +2,7 @@
   <img src="../images/map01.png" alt="CloudGripper pixel-to-workspace mapping workflow" width="980"/>
 </p>
 
-# Pixel-to-Workspace Mapping for CloudGripper
+# Pixel-to-Workspace Mapping for CloudGripperc
 
 **Shared Module · Task 1 and Task 2 · Team K-DAS**
 
