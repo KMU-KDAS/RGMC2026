@@ -151,39 +151,34 @@ $$
 
 ---
 
-### 6. Ground Friction and Newton-Euler Equations
+## 6. Ground Friction and Newton-Euler Equations
 
-물체의 현재 선속도 반대 방향으로 병진 마찰력을 적용한다.
-
-$$
-F_{fric}
-=
--\frac{v}{\lVert v\rVert}\mu_g m g
-$$
-
-회전에는 유효 마찰 반경 $R_{eff}$를 이용한 저항 토크를 적용한다.
+물체의 현재 선속도 반대 방향으로 translational friction을 적용한다.
 
 $$
-\tau_{fric}
-=
--\mathrm{sgn}(\omega)\mu_g m g R_{eff}
+F_{fric}=-\frac{v}{\lVert v\rVert}\mu_gmg
 $$
 
-최종 선가속도와 각가속도는 다음과 같이 계산한다.
+회전에는 effective friction radius $R_{eff}$를 사용하는 저항 torque를 적용한다.
 
 $$
-a
-=
-\frac{F_{app}+F_{fric}}{m}
+\tau_{fric}=-\mathrm{sgn}(\omega)\mu_gmgR_{eff}
+$$
+
+최종 선가속도와 각가속도는 다음과 같다.
+
+$$
+a=\frac{F_{app}+F_{fric}}{m}
 $$
 
 $$
-\alpha
-=
-\frac{\tau_{push}+\tau_{fric}}{I}
+\alpha=\frac{\tau_{push}+\tau_{fric}}{I}
 $$
 
-이 구조는 접촉점에 가해지는 힘의 작용선이 COM을 통과할 때 회전 효과가 작아지고, COM에서 멀어질수록 토크가 증가하여 회전 효과가 커지는 기본적인 물리적 경향을 반영한다.
+이 구조는 push force line이 COM을 통과하면 회전이 작아지고, COM에서 멀어질수록 torque가 커져 회전 효과가 증가하는 기본적인 물리 경향을 직접 반영한다.
+
+---
+
 ## 7. Time Integration and Moving Contact
 
 <p align="center">
