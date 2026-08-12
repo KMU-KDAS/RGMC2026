@@ -1,4 +1,8 @@
 <p align="center">
+  <img src="../images/task2.gif" alt="Task 2 rope manipulation" width="520"/>
+</p>
+
+<p align="center">
   <img src="../images/t2_overview01.png" alt="Task 2 rope manipulation" width="920"/>
 </p>
 
