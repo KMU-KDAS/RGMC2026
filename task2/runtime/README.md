@@ -106,7 +106,7 @@ $$
 현재 rope와 target rope의 tangent를 각각 `t_cur`, `t_goal`이라 하면 signed angle은 다음과 같다.
 
 $$
-\Delta_{dir}=\operatorname{atan2}(t_{cur,x}t_{goal,y}-t_{cur,y}t_{goal,x},\ t_{cur}\cdot t_{goal})
+\Delta_{dir}=\mathrm{atan2}\left(t_{cur,x}t_{goal,y}-t_{cur,y}t_{goal,x},\ t_{cur}\cdot t_{goal}\right)
 $$
 
 `directed_delta`는 단순한 angle difference가 아니라 **node ordering을 유지한 상태에서 어느 방향으로 회전해야 하는지**를 나타낸다.
@@ -146,7 +146,7 @@ Signed area는 보조 지표이며, 최종 안전성은 directed delta, selected
 따라서 directed delta를 0으로 줄이기 위한 desired command sign은 다음처럼 해석했다.
 
 $$
-\operatorname{sign}(\Delta_{cmd,desired})\approx-\operatorname{sign}(\Delta_{dir})
+\mathrm{sgn}\left(\Delta_{cmd,desired}\right)\approx-\mathrm{sgn}\left(\Delta_{dir}\right)
 $$
 
 이 결과를 모든 action에 무조건 반전 적용한 것은 아니다. 현재 selected action이 실측 sign convention과 충돌하는 경우에만 partial direction correction을 적용했다.
