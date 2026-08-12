@@ -118,7 +118,7 @@ Cloud robotics 환경에서는 실제 로봇을 눈앞에서 직접 조정할 �
 
 ---
 
-## 4. Shared Mapping — Before Control, We Needed a Common Language
+## 4. [Shared Mapping](mapping/README.md) — Before Control, We Needed a Common Language
 
 > **“이미지에서 보이는 한 점을 로봇에게 정확히 어디라고 말할 수 있는가?”**
 
@@ -145,7 +145,7 @@ Full documentation: [`mapping/README.md`](mapping/README.md)
 
 ---
 
-## 5. Task 1 — Predict Before Pushing
+## 5. [Task 1](task1/README.md) — Predict Before Pushing
 
 > **“물체를 밀어야 한다는 것은 알겠는데, 어디를 어느 방향으로 얼마나 밀어야 하는가?”**
 
@@ -155,13 +155,13 @@ Task 1은 겉보기에는 단순한 pushing 문제지만, 실제로는 underactu
   <img src="images/root05.png" alt="Task 1 real robot execution" width="920"/>
 </p>
 
-### 5.1 From shape detection to a planning state
+### 5.1 [Geometry](task1/geometry/README.md) — From shape detection to a planning state
 
 우리는 circle, square, T-shape를 서로 다른 hard-coded command로 다루는 대신, contour, pose, polygon, keypoint, IoU로 표현했다. 이 공통 representation 위에서 symmetry와 orientation ambiguity를 별도로 처리했다.
 
 특히 T-shape에서는 detector와 planner의 기준축이 약 90° 어긋나는 문제가 있었고, 중심점 하나만 맞추는 방식으로는 자세가 안정적으로 정렬되지 않았다. 현재와 목표 형상 모두에 동일한 basis correction을 적용하고, 8개 꼭짓점 전체를 이용해 rigid alignment를 수행했다. 사각형에는 cyclic vertex permutation을 적용해 꼭짓점 시작 번호 차이가 불필요한 회전으로 이어지는 것을 막았다.
 
-### 5.2 From “move toward the goal” to candidate-wise prediction
+### 5.2 [Dynamics](task1/dynamics/README.md) + [Planning](task1/planning/README.md) — From “move toward the goal” to candidate-wise prediction
 
 처음에는 목표 중심을 향해 밀면 충분할 것처럼 보였다. 그러나 비대칭 물체에서는 중심이 가까워져도 orientation이 악화될 수 있었고, 긴 push는 빠르지만 overshoot와 workspace 이탈 위험이 컸다.
 
@@ -178,7 +178,7 @@ Task 1은 겉보기에는 단순한 pushing 문제지만, 실제로는 underactu
   <img src="images/root06.png" alt="Task 1 model-based closed-loop planning pipeline" width="1000"/>
 </p>
 
-### 5.3 A good action still needs a path
+### 5.3 [Planning](task1/planning/README.md) + [Runtime](task1/runtime/README.md) — A good action still needs a path
 
 물리적으로 좋은 push라도 gripper가 contact point까지 갈 수 없다면 무의미하다. 실제 테스트에서는 candidate가 충분히 생성됐지만 safety margin 때문에 실행 가능한 후보가 0개가 되는 문제가 있었다.
 
@@ -209,7 +209,7 @@ Full overview: [`task1/README.md`](task1/README.md)
 
 ---
 
-## 6. Task 2 — Model What Cannot Be Reduced to a Pose
+## 6. [Task 2](task2/README.md) — Model What Cannot Be Reduced to a Pose
 
 > **“중심과 각도로 표현할 수 없는 로프를, 어떤 상태와 모델로 제어할 것인가?”**
 
@@ -221,7 +221,7 @@ Task 2는 한쪽 끝이 고정된 deformable linear object의 전체 형상을 �
 
 우리는 로프를 **20개의 ordered node**로 표현하고, 문제를 현재 node array를 target node array에 가깝게 이동시키는 closed-loop control problem으로 재구성했다.
 
-### 6.1 Start from physics, not from a black box
+### 6.1 [DER Dynamics](task2/dynamics/der/README.md) — Start from physics, not from a black box
 
 첫 시도는 Discrete Elastic Rods의 관점을 적용한 planar DER model이었다. Fixed end, bending, damping, edge-length preservation을 통해 로프의 기본 거동을 설명하려 했다.
 
@@ -231,7 +231,7 @@ DER는 중요한 physical prior를 제공했지만 실제 rope material, table f
 
 > **“물리 모델이 설명한 부분은 유지하고, 남은 systematic error만 학습할 수 있는가?”**
 
-### 6.2 Residual GNN — correcting, not replacing, physics
+### 6.2 [Residual GNN](task2/dynamics/residual_gnn/README.md) — Correcting, not replacing, physics
 
 DER prediction과 실제 next state의 차이를 residual target으로 정의하고, 20-node chain graph를 사용하는 GNN이 각 node의 correction을 예측하도록 했다.
 
@@ -240,7 +240,7 @@ DER prediction과 실제 next state의 차이를 residual target으로 정의하
 
 이후 위치 오차만 줄이면 edge가 늘어나거나 줄어드는 문제가 나타났다. 이를 해결하기 위해 target-edge loss와 edge projection을 추가했다. Projection도 무조건 강하게 적용하지 않고, shape tracking과 edge consistency 사이의 trade-off를 실험해 중간 강도를 선택했다.
 
-### 6.3 MPC — how to create good actions
+### 6.3 [MPC](task2/planning/mpc/README.md) — How to create good actions
 
 Dynamics model이 생겼다고 곧바로 좋은 policy가 생기는 것은 아니었다. 현재 rope state에서 가능한 grasp node, direction, stroke candidate를 생성하고 각각의 다음 상태를 hybrid dynamics로 예측해야 했다.
 
@@ -252,7 +252,7 @@ Dynamics model이 생겼다고 곧바로 좋은 policy가 생기는 것은 아�
 - average step-to-success: **15.50 → 9.33**
 - final mean error: **4.408 mm → 3.685 mm**
 
-### 6.4 From a slow teacher to a fast policy
+### 6.4 [Candidate-aware BC / Offline RL](task2/policy/candidate_aware_rl/README.md) — From a slow teacher to a fast policy
 
 MPC는 좋은 action을 만들었지만 매 step마다 많은 candidate rollout이 필요했다. 따라서 MPC를 최종 online controller로 고집하지 않고, **teacher generator**로 재해석했다.
 
@@ -262,7 +262,7 @@ MPC는 좋은 action을 만들었지만 매 step마다 많은 candidate rollout�
 
 이 구조는 “MPC를 대체하는 RL”이 아니라, **MPC가 만든 판단 기준을 더 빠르게 실행하는 policy**였다.
 
-### 6.5 The last gap was physical execution
+### 6.5 [Runtime Safety](task2/runtime/README.md) — The last gap was physical execution
 
 Simulation과 rollout에서 좋은 action이 실제 로봇에서도 그대로 작동하지는 않았다.
 
@@ -314,13 +314,13 @@ Task 2의 GNN은 전체 dynamics를 처음부터 대체하지 않았다. DER pre
 
 ### 7.3 We treated failures as architecture signals
 
-- HSV center instability → YOLOv8-seg mapping
-- fixed goal scoring → candidate-specific reference progress
-- approach candidates all rejected → contact-aware safety interpretation
-- 1-step near-goal failure → 2-step MPC
-- critic divergence → qsafe target clipping
-- endpoint uncertainty → endpoint-specific runtime limits
-- release-induced score loss → pre-release score hold
+- HSV center instability → [YOLOv8-seg mapping](mapping/README.md)
+- fixed goal scoring → [candidate-specific reference progress](task1/planning/README.md)
+- approach candidates all rejected → [contact-aware safety interpretation](task1/planning/README.md)
+- 1-step near-goal failure → [2-step MPC](task2/planning/mpc/README.md)
+- critic divergence → [qsafe target clipping](task2/policy/candidate_aware_rl/README.md)
+- endpoint uncertainty → [endpoint-specific runtime limits](task2/runtime/README.md)
+- release-induced score loss → [pre-release score hold](task2/runtime/README.md)
 
 각 실패는 단순 parameter tuning으로 덮지 않고, 시스템 구조를 바꾸는 근거로 사용했다.
 
