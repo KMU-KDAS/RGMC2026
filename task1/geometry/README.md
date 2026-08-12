@@ -199,15 +199,15 @@ $$
 Canonical T template의 꼭짓점을 $p_i$, 실제 target 꼭짓점을 $q_i$라고 하면, 두 형상을 가장 잘 겹치게 만드는 회전과 이동을 찾는다.
 
 $$
-R^{*},t^{*}=\arg\min_{R,t}\sum_i\|Rp_i+t-q_i\|^2
+R^\star,t^\star=\arg\min_{R,t}\sum_i \lVert Rp_i+t-q_i\rVert^2
 $$
 
 이 정합은 다음 의미를 가진다.
 
-- 중심점 하나가 아니라 **형상 전체**를 이용한다.
-- target의 실제 크기와 비대칭 구조를 더 많이 보존한다.
-- 회전과 이동을 동시에 계산한다.
-- planner canonical shape와 evaluator target 사이의 offset을 줄인다.
+* 중심점 하나가 아니라 **형상 전체**를 이용한다.
+* target의 실제 크기와 비대칭 구조를 더 많이 보존한다.
+* 회전과 이동을 동시에 계산한다.
+* planner canonical shape와 evaluator target 사이의 offset을 줄인다.
 
 <p align="center">
   <img src="../../images/t1_geometry08.png" alt="T-shape target alignment before and after correction" width="900"/>
@@ -225,14 +225,17 @@ Rigid alignment이 안정적으로 동작하려면 current와 target의 8개 ver
 
 7주차 초기 검증에서는 일부 run이 높은 IoU에 도달했지만 전체 성능은 아직 불안정했다.
 
-| Metric | Development-stage result |
-|---|---:|
-| Mean max IoU | **0.5896** |
-| Runs reaching IoU ≥ 0.8 | **2 / 10** |
-| Best observed max IoU | **0.8698** |
-| Mean step at max IoU | **10.1** |
+| Metric                  | Development-stage result |
+| ----------------------- | -----------------------: |
+| Mean max IoU            |               **0.5896** |
+| Runs reaching IoU ≥ 0.8 |               **2 / 10** |
+| Best observed max IoU   |               **0.8698** |
+| Mean step at max IoU    |                 **10.1** |
 
 이 결과는 geometry correction만으로 전체 Task 1이 완성되는 것은 아니라는 점을 보여준다. 이후 candidate scoring, approach path와 execution time 개선이 추가되면서 최종 평가에서 T와 T-long은 각각 **52.24**, **57.21**의 Top-3 average score를 기록했다.
+
+---
+
 
 ---
 
