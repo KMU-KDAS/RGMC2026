@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="images/root01.png" alt="RGMC 2026 K-DAS Cloud Robotics System" width="1100"/>
+  <img src="images/kdasmain.gif" alt="K-DAS RGMC 2026 Cloud Robotics System" width="720"/>
 </p>
 
 # RGMC 2026 · K-DAS Cloud Robotics System
@@ -26,6 +26,29 @@ K-DAS는 원격 CloudGripper 환경에서 서로 성격이 완전히 다른 두 
 
 ---
 
+## System in Action
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <a href="task1/README.md">
+        <img src="images/task1.gif" width="100%" alt="Task 1 planar pushing demo">
+      </a><br>
+      <b><a href="task1/README.md">Task 1 · Model-Based Planar Pushing</a></b>
+    </td>
+    <td align="center" width="50%">
+      <a href="task2/README.md">
+        <img src="images/task2.gif" width="100%" alt="Task 2 rope manipulation demo">
+      </a><br>
+      <b><a href="task2/README.md">Task 2 · Deformable Rope Manipulation</a></b>
+    </td>
+  </tr>
+</table>
+
+두 task는 대상 물체의 성질은 완전히 다르지만, **관측 → workspace 표현 → action 선택 → 실제 실행 → 재관측**이라는 동일한 closed-loop 원칙 위에서 개발되었다.
+
+---
+
 ## 1. The Result
 
 | Competition Result | K-DAS |
@@ -36,7 +59,7 @@ K-DAS는 원격 CloudGripper 환경에서 서로 성격이 완전히 다른 두 
 | **Task 2 Mid-term Evaluation** | **76.90 / 100 · 1st place** |
 
 <p align="center">
-  <img src="images/root02.png" alt="RGMC 2026 final ranking" width="820"/>
+  <img src="images/results.png" alt="RGMC 2026 Final Competition Results — K-DAS Overall 1st Place" width="1000"/>
 </p>
 
 Overall 1위는 한 task에만 집중한 결과가 아니었다. K-DAS는 rigid object와 deformable object라는 서로 다른 문제에서 모두 경쟁력 있는 성능을 확보했고, 두 task를 공통 mapping과 closed-loop execution 구조 위에 통합했다. Task 1에서는 최종 1위를 기록했고, Task 2에서는 original rope와 longer rope에서 각각 **92.61**, **87.73**을 기록하며 최종 **81.64점**을 달성했다.
