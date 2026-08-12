@@ -151,7 +151,7 @@ episode boundary / terminal success
 Candidate $k$의 predicted mean error를 $m_k$, shortlist에서 가장 좋은 error를 $m^*$라고 하면 relative Q target은 다음과 같이 구성된다.
 
 $$
-q_k^{target}=-\operatorname{clip}(m_k-m^*,0,M)\cdot c_q
+q_k^{target}=-\mathrm{clip}\left(m_k-m^*,\,0,\,M\right)\,c_q
 $$
 
 - Best candidate: $m_k\approx m^*$이므로 Q target이 0에 가까움
@@ -194,17 +194,24 @@ $$
 
 초기 candidate-aware RL에서는 val TD loss와 qsup loss가 급격히 증가하며 critic이 발산하였다. 원인은 candidate distribution 전체가 나빴기 때문이 아니라, **매우 적은 비율의 extreme error가 Q target scale을 지배한 것**이었다.
 
-<img src="../../../images/t2_rl03.png" alt="Candidate error and Q-target outlier analysis from the weekly report" width="850"/>
+주요 통계와 clipping 적용 전후의 변화는 다음과 같다.
 
-주요 통계는 다음과 같다.
-
-| Metric | Value |
-|---|---:|
-| Candidate error median | 14.4993 mm |
-| Candidate error p99 | 51.6757 mm |
-| Maximum candidate error | 12,404.6729 mm |
-| Error > 1,000 mm ratio | 0.0097% |
-| Minimum raw Q target | −1237.9601 |
+| Metric | Original data / logic | After clipping / qsafe |
+|---|---:|---:|
+| Candidate error mean | 19.2055 mm | Unchanged |
+| Candidate error median | 14.4993 mm | Unchanged |
+| Candidate error p95 | 43.5314 mm | Unchanged |
+| Candidate error p99 | 51.6757 mm | Unchanged |
+| Maximum candidate error | 12,404.6729 mm | Unchanged |
+| Error > 100 mm ratio | 0.0223% | Unchanged |
+| Error > 500 mm ratio | 0.0111% | Unchanged |
+| Error > 1,000 mm ratio | 0.0097% | Unchanged |
+| Minimum Q target | −1237.9601 | Hard lower bound: −2 |
+| Q target p1 | −0.7281 | qsafe: −0.1456 |
+| Q target median | −0.0456 | qsafe: −0.0091 |
+| Maximum Q target | 0.0000 | 0.0000 |
+| Q target < −2 ratio | 0.0752% | 0% |
+| qsup divergence observed | Yes | No |
 
 대부분의 candidate는 정상 범위였지만, 0.01%보다 작은 outlier도 squared/supervised critic loss에서는 매우 큰 gradient를 만들 수 있었다.
 
@@ -228,15 +235,18 @@ $$
 
 <img src="../../../images/t2_rl04.png" alt="Before and after qsafe training stability" width="760"/>
 
-<img src="../../../images/t2_rl05.png" alt="Qsafe stabilization table from the weekly report" width="900"/>
+학습 안정화 전후의 주요 로그를 표로 정리하면 다음과 같다.
 
-대표적인 변화는 다음과 같다.
-
-- val TD loss: 최대 26.1249 → 0.2789
-- qsup loss spike: 7838.5371 → validation 1.7719
-- critic loss: 26.5821 → 0.3218
-- Q target minimum: 약 −2000 수준 → lower bound −2
-- Best checkpoint: epoch 98에서 갱신되고 epoch 100까지 정상 완료
+| Item | Before stabilization | After qsafe | Summary |
+|---|---|---|---|
+| Validation TD loss | Rose as high as 26.1249; 23.4958 at E059 | 0.2789 at E100 | 26.1249 → 0.2789 |
+| qsup loss | Batch spike of 7838.5371 | Validation 1.7719 at E100 | 7838.5371 → 1.7719 |
+| Minimum Q target | Outliers around −2000 | Clipped with lower bound −2 | ≈ −2000 → −2 |
+| Validation critic loss | Peak 26.5821 around E053 | 0.3218 at E100 | 26.5821 → 0.3218 |
+| Best-checkpoint update | No stable best save during the unstable interval | Best updated at E098; training completed through E100 | best_epoch = 98 |
+| Triple accuracy | Approximately 0.155–0.169 in unstable validation | Best validation triple accuracy 0.231 | Improved |
+| Ranking loss | 0.6885 at E059; peak 0.7204 | 0.6823 at E100 | 0.6885 → 0.6823 |
+| Candidate gap | 0.0810 at E059 | 0.0587 at E100 | 0.0810 → 0.0587 |
 
 Clipping은 단순한 성능 튜닝이 아니라, 소수 outlier가 critic 전체를 발산시키는 것을 막기 위한 필수적인 numerical stabilization이었다.
 
@@ -267,7 +277,6 @@ Clipping은 단순한 성능 튜닝이 아니라, 소수 outlier가 critic 전�
 이후 target-edge w500 GNN과 2-step MPC로 teacher dataset을 다시 만들고, BC는 high-quality steps로, RL은 full episode/candidate records로 재학습하였다.
 
 <img src="../../../images/t2_rl07.png" alt="Old policies and target-edge w500 policy comparison" width="900"/>
-
 
 | Model | Best mean error | Final edge relative error |
 |---|---:|---:|
