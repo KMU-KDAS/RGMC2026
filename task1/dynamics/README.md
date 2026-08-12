@@ -189,11 +189,31 @@ $$
 
 ### 7.1 Measured robot speed
 
-실제 로봇에서 0.09 m 이동을 15회 측정한 결과 최종 평균 pushing speed는 약 **0.0933 m/s**였다.
+The actual pushing speed of the robot was measured over 15 trials, each with a commanded travel distance of **0.09 m**. The overall mean pushing speed was approximately **0.0933 m/s**.
 
-<p align="center">
-  <img src="../../images/t1_dynamics05.png" alt="Measured pusher speed" width="760"/>
-</p>
+| Measurement Set | Trial | Travel Distance (m) | Travel Time (s) | Speed (m/s) |
+|---|---:|---:|---:|---:|
+| 1st | 1 | 0.0900 | 0.9767 | 0.0921 |
+| 1st | 2 | 0.0900 | 0.9633 | 0.0934 |
+| 1st | 3 | 0.0900 | 0.9195 | 0.0979 |
+| 1st | 4 | 0.0900 | 0.9618 | 0.0936 |
+| 1st | 5 | 0.0900 | 0.9315 | 0.0966 |
+| **1st Mean** | — | — | — | **0.0947** |
+| 2nd | 1 | 0.0900 | 0.9686 | 0.0929 |
+| 2nd | 2 | 0.0900 | 0.9515 | 0.0946 |
+| 2nd | 3 | 0.0900 | 0.9607 | 0.0937 |
+| 2nd | 4 | 0.0900 | 1.0006 | 0.0899 |
+| 2nd | 5 | 0.0900 | 0.9906 | 0.0909 |
+| **2nd Mean** | — | — | — | **0.0924** |
+| 3rd | 1 | 0.0900 | 0.9455 | 0.0952 |
+| 3rd | 2 | 0.0900 | 0.9965 | 0.0903 |
+| 3rd | 3 | 0.0900 | 0.9534 | 0.0944 |
+| 3rd | 4 | 0.0900 | 0.9343 | 0.0963 |
+| 3rd | 5 | 0.0900 | 1.0267 | 0.0877 |
+| **3rd Mean** | — | — | — | **0.0928** |
+| **Overall Mean** | **15 trials** | — | — | **0.0933** |
+
+The measured mean speed was used to convert each push stroke length into a rollout duration.
 
 $$
 T=\frac{L}{v_{push}}, \qquad N=\left\lceil\frac{T}{\Delta t}\right\rceil
