@@ -159,22 +159,16 @@ $$
 
 ## 8. 1-step vs. 2-step Results
 
-<img src="../../../images/t2_mpc06.png" alt="Comparison table and charts from the week 9 experiment report" width="820"/>
+동일 seed 기반 실험에서 1-step MPC와 2-step MPC를 비교한 결과는 다음과 같다.
 
-<p align="center"><i>9주차 실험 보고서의 동일 seed 기반 1-step/2-step MPC 비교.</i></p>
+| Mode | Success rate | Avg. steps to success | Selected 1-step predicted error | Selected future predicted error | One-step cost $J_1$ | Future cost $J_{future}$ | Total cost $J_{total}$ | Final mean error | Best mean error |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| **1-step MPC** | 4/5 | 15.50 | 12.057 mm | 11.568 mm | 0.063959 | 0.059454 | 0.060806 | 4.408 mm | 3.751 mm |
+| **2-step MPC** | **5/5** | **9.33** | **9.929 mm** | **8.984 mm** | **0.061834** | **0.054412** | **0.058725** | **3.685 mm** | **3.516 mm** |
 
 <img src="../../../images/t2_mpc07.png" alt="Future-aware planning reduced steps-to-success" width="720"/>
 
-| Metric | 1-step MPC | 2-step MPC |
-|---|---:|---:|
-| Success rate | 4/5 | 5/5 |
-| Average step-to-success | 15.50 | 9.33 |
-| Selected 1-step predicted error | 12.057 mm | 9.929 mm |
-| Selected future predicted error | 11.568 mm | 8.984 mm |
-| Final mean error | 4.408 mm | 3.685 mm |
-| Best mean error | 3.751 mm | 3.516 mm |
-
-2-step MPC는 단순히 horizon을 한 단계 늘린 것이 아니라, **더 빠른 수렴과 더 안정적인 teacher action**을 제공했다.
+2-step MPC는 단순히 horizon을 한 단계 늘린 것이 아니라, **더 빠른 수렴과 더 안정적인 teacher action**을 제공했다. 특히 success rate가 4/5에서 5/5로 증가했고, 평균 success 도달 step은 15.50에서 9.33으로 감소했다.
 
 ---
 
