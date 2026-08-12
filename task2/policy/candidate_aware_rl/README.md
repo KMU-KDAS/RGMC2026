@@ -268,7 +268,6 @@ Clipping은 단순한 성능 튜닝이 아니라, 소수 outlier가 critic 전�
 
 <img src="../../../images/t2_rl07.png" alt="Old policies and target-edge w500 policy comparison" width="900"/>
 
-<img src="../../../images/t2_rl08.png" alt="BC and RL comparison table and chart from the weekly report" width="900"/>
 
 | Model | Best mean error | Final edge relative error |
 |---|---:|---:|
