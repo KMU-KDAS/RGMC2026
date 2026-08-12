@@ -172,7 +172,6 @@ Direct → L-shape → U-shape → Short A*
 - 최종 **49.69점 · Task 1 1위**
 - 사각형 통합 검증 **11 / 11회 final IoU ≥ 0.8**
 - Circle, Square, T, T-long뿐 아니라 unseen Plus와 Organic shape까지 동일 pipeline으로 처리
-- 5-waypoint 실행의 고정 대기시간을 약 **3.00 s → 0.65 s**로 단축
 
 Task 1의 성과는 완벽한 physics model 하나를 얻은 데 있지 않았다. 짧은 horizon에서 후보의 상대적 품질을 예측하고, 실제 실행 후 다시 관측하는 구조를 통해 model mismatch를 제어 가능한 수준으로 만들었다.
 
