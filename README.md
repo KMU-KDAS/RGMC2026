@@ -276,7 +276,7 @@ Simulation과 rollout에서 좋은 action이 실제 로봇에서도 그대로 �
 실제 로그에서 분석 가능한 18개 action 중 **14개 action이 평균 node error를 감소**시켰고, 평균 error는 **173.69 mm → 106.23 mm**로 줄었다. 이 결과는 runtime 보정이 포함된 실제 실행 action이 전반적으로 목표 형상에 가까워지는 방향으로 작동했음을 보여준다.
 
 <p align="center">
-  <img src="images/root08.png" alt="Task 2 system evolution" width="1020"/>
+  <img src="images/root008.png" alt="Task 2 system evolution" width="1020"/>
 </p>
 
 ### 6.6 What Task 2 achieved
