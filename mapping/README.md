@@ -1,51 +1,83 @@
 <p align="center">
-  <img src="../images/map01.png" alt="CloudGripper pixel-to-workspace mapping workflow" width="980"/>
+  <img src="../images/map01.png" alt="CloudGripper robot-specific mapping and matching workflow" width="980"/>
 </p>
 
-# Pixel-to-Workspace Mapping for CloudGripper
+# Robot-Specific Mapping and Automatic Matching for CloudGripper
 
-**Shared Module · Task 1 and Task 2 · Team K-DAS**
+**Shared Module · Task 1 and Task 2 · Team K-DAS · RGMC 2026**
 
-이 모듈은 bottom-view camera에서 검출한 픽셀 좌표 `(u, v)`를 CloudGripper가 사용하는 정규화 workspace 좌표 `(x, y)`로 변환한다. 로봇팔을 실제 작업공간의 조밀한 grid에 이동시키면서 **명령한 robot coordinate와 영상에서 검출한 gripper center pixel의 대응쌍**을 수집하고, 이를 기반으로 연속적인 pixel-to-workspace 변환기를 구축한다.
+Task 1과 Task 2에서 검출되는 object, corner, rope node의 위치는 모두 camera pixel coordinate `(u, v)`로 얻어진다. 반면 CloudGripper는 normalized workspace coordinate `(x, y)`를 기준으로 움직이기 때문에, 실제 계산과 robot command를 위해서는 pixel coordinate를 normalized coordinate로 변환해야 한다.
 
-최종 구조는 단순한 nearest-neighbor lookup이 아니다. 33×33 calibration data로부터 두 개의 Clough-Tocher 보간 함수 `x = f_x(u,v)`, `y = f_y(u,v)`를 만들고, runtime에서 object center, polygon vertex, rope node를 실제 planning 좌표로 변환한다.
+CloudGripper는 robot마다 camera geometry와 보이는 workspace가 조금씩 달랐고, competition에서는 어느 robot에 연결되는지도 미리 알 수 없었다. K-DAS는 test period 동안 robot별 coordinate map을 미리 생성해 두고, competition 시작 시 첫 camera observation만으로 현재 robot에 맞는 map을 찾아 바로 사용하는 방식으로 이 문제를 해결했다.
 
-> **핵심 질문**  
-> “카메라 영상에서 측정한 위치를, 실제 로봇팔이 움직일 수 있는 좌표와 어떻게 안정적으로 연결할 것인가?”
+> **이 문서에서 `map`은** robot command coordinate `(x, y)`와 camera에서 관측한 gripper pixel `(u, v)`의 대응 관계를 이용해 만든 **robot-specific pixel-to-workspace 변환 정보**를 의미한다.
+
+```text
+Before competition
+robot identity known
+→ build robot-specific maps
+→ store maps for prepared robots
+
+Competition
+robot identity unknown
+→ detect current gripper position
+→ find the best-matching robot map
+→ convert pixel coordinates during runtime
+→ execute Task 1 / Task 2
+```
 
 ---
 
-## 1. Why Mapping Is a Shared Module
+## 1. Why Mapping Is Needed
 
-카메라가 반환하는 위치와 로봇 명령이 사용하는 위치는 서로 다른 좌표계다.
+Camera와 robot은 서로 다른 좌표계를 사용한다.
 
 ```text
 Camera observation:  pixel coordinate (u, v)
 Robot command:       normalized workspace coordinate (x, y)
 ```
 
-Task 1에서는 물체의 center, corner, contour를 workspace로 변환해야 rigid-body prediction과 push planning을 수행할 수 있다. Task 2에서는 rope segmentation에서 추출한 20개 ordered node를 workspace state로 변환해야 DER, Residual GNN, MPC와 policy가 사용할 수 있다.
+Task 1에서는 object center, corner, contour의 pixel coordinate를 normalized coordinate로 변환한 뒤 object pose와 pushing action을 계산한다.
 
-따라서 mapping은 Task 1 또는 Task 2 내부의 부가 기능이 아니라, perception과 planning을 연결하는 공통 coordinate bridge다.
+```text
+object pixels
+→ normalized coordinates
+→ pose / polygon / contact point
+→ push planning
+```
+
+Task 2에서는 rope segmentation으로 얻은 node들의 pixel coordinate를 normalized coordinate로 변환해 rope state와 다음 action을 계산한다.
+
+```text
+rope node pixels
+→ normalized coordinates
+→ rope state
+→ planning / control
+```
+
+따라서 두 task 모두에서 **camera에서 측정한 pixel coordinate를 계산에 사용할 normalized workspace coordinate로 변환하는 과정**이 필요했다.
 
 ---
 
-## 2. Development Evolution
+## 2. Why Robot-Specific Maps Were Needed
 
-### 2.1 Initial HSV-based calibration
+CloudGripper의 command coordinate는 공통적으로 normalized `(x, y)`를 사용하지만, 동일한 `(x, y)`가 camera image에서 나타나는 pixel 위치는 robot마다 조금씩 달랐다.
 
-초기에는 gripper의 색상을 HSV threshold로 분리하여 center pixel을 계산했다. 구조는 단순했지만 다음 문제가 반복되었다.
+주요 원인은 robot별 camera mounting, distortion, visible workspace 차이였다. 따라서 하나의 변환식을 모든 robot에 공통으로 사용하는 대신, **각 robot에 대해 별도의 map을 생성**했다.
 
-- 조명과 반사에 따른 mask 변화
-- gripper와 물체의 근접 또는 겹침
-- 작은 mask에서 중심점이 크게 흔들리는 문제
-- 일부 위치에서 검출 실패
+Test period에는 현재 연결된 robot 번호를 알고 있었기 때문에 해당 robot의 map을 미리 생성할 수 있었다. Competition에서는 robot 번호가 주어지지 않았기 때문에, 준비한 map들 중 현재 robot에 맞는 map을 자동으로 찾아야 했다.
 
-Calibration point가 잘못 측정되면 그 오차가 LUT 전체로 전파되기 때문에, mapping 품질은 detector 안정성에 직접 의존했다.
+<!-- Overview image at the top (map01) should also show that the same normalized workspace appears differently across robot cameras. -->
 
-### 2.2 YOLOv8n-seg gripper detector
+---
 
-최종 calibration에서는 gripper를 독립적인 segmentation 대상으로 학습한 YOLOv8n-seg model을 사용했다. 약 1,000장의 다양한 workspace 이미지를 활용했으며, bounding box center가 아니라 segmentation mask contour의 moment로 실제 기하학적 center를 계산했다.
+## 3. Gripper Detection: HSV to YOLOv8-Seg
+
+Map을 생성하려면 robot을 특정 `(x, y)`로 이동시킨 뒤, camera image에서 실제 gripper center `(u, v)`를 안정적으로 찾아야 한다.
+
+초기에는 HSV threshold를 이용해 gripper color를 분리했지만 조명, 반사, object와의 겹침에 따라 center 위치가 흔들리거나 detection이 실패하는 경우가 있었다.
+
+최종적으로는 YOLOv8n-seg를 이용해 gripper를 segmentation하고, mask contour의 moment로 gripper center를 계산했다. 약 1,000장의 workspace image를 학습에 사용했다.
 
 | Metric | Box | Mask |
 |---|---:|---:|
@@ -54,184 +86,177 @@ Calibration point가 잘못 측정되면 그 오차가 LUT 전체로 전파되�
 | mAP50 | 0.995 | 0.995 |
 | mAP50-95 | 0.930 | 0.794 |
 
-<p align="center"><img src="../images/map02.png" alt="YOLOv8 segmentation and gripper centroid" width="760"/></p>
+<p align="center">
+  <img src="../images/map02.png" alt="YOLOv8 segmentation and gripper centroid" width="760"/>
+</p>
 
-### 2.3 Coordinate convention cleanup
-
-초기 실험에서는 영상과 robot coordinate의 방향을 직관적으로 맞추기 위해 flip과 rotate를 적용했다. 그러나 calibration, runtime perception, evaluation 모두가 같은 변환을 공유해야 해 오류 원인이 복잡해졌다. 최종 구현에서는 flip/rotate를 제거하고 **undistorted original image coordinate**를 공통 기준으로 사용했다.
+YOLO detector는 map 생성뿐 아니라 competition 시작 시 현재 gripper 위치를 검출해 robot map을 matching할 때도 사용했다.
 
 ---
 
-## 3. Robot-specific Calibration Workflow
+## 4. Robot-Specific Map Generation
 
-<p align="center"><img src="../images/map03.png" alt="Gripper detection at workspace corner points" width="900"/></p>
+<p align="center">
+  <img src="../images/map03.png" alt="Gripper detection at robot-specific mapping points" width="900"/>
+</p>
 
-### 3.1 Configuration
+<!-- map03: show representative gripper detections at several commanded positions -->
 
-각 robot은 별도의 YAML configuration을 사용한다. 실제 값은 robot camera와 visibility에 따라 달라지지만, 대표 설정은 다음과 같다.
-
-| Parameter | Example | Role |
-|---|---:|---|
-| Grid size | 33 × 33 | 1089 workspace samples |
-| Frames per point | 5 | repeated image measurements |
-| Minimum valid frames | 3 | reject unstable points |
-| Settle time | 0.7 s | reduce residual arm motion |
-| Inter-frame interval | 0.05 s | avoid duplicate timing |
-| Resume | True | skip already completed points |
-| Save masks / debug JSON | True | failure diagnosis |
-
-### 3.2 Per-point collection
-
-각 grid point에서 다음 절차를 수행한다.
+각 robot에 대해 gripper가 이동 가능한 workspace를 **33 × 33 grid**로 나누고, 총 1089개 위치에서 robot coordinate와 gripper pixel coordinate의 대응 관계를 측정했다.
 
 ```text
-Move robot to commanded (x, y)
-→ wait for settling
-→ capture 5 frames
-→ undistort each frame
-→ YOLOv8-seg gripper detection
-→ calculate mask centroid (u, v)
-→ accept only if at least 3 frames are valid
-→ store median(u), median(v), std_u, std_v
+Command robot to (x, y)
+→ wait until the gripper settles
+→ capture camera images
+→ detect gripper center (u, v)
+→ save correspondence (u, v) ↔ (x, y)
+→ repeat over the 33 × 33 workspace grid
 ```
 
-Mean 대신 median을 사용해 순간적인 detection outlier와 진동의 영향을 줄였다. Grid는 한 줄씩 왕복하는 방식으로 순회해 장거리 불필요 이동도 줄였다.
+한 지점에서는 여러 frame을 측정하고 유효한 detection들의 median center를 사용해 순간적인 detection noise를 줄였다. Camera distortion 보정도 map 생성과 runtime에서 동일하게 적용했다.
 
-<p align="center"><img src="../images/map04.png" alt="Calibration artifacts and retry workflow" width="900"/></p>
+<p align="center">
+  <img src="../images/map06.png" alt="33 by 33 robot-specific mapping grid" width="760"/>
+</p>
 
-### 3.3 Saved artifacts
+<!-- map06: emphasize the 33×33 measured grid and the (u,v) ↔ (x,y) correspondence -->
 
-```text
-data/map/robotXX/
-├─ calibration.csv
-├─ calibration_failed.csv
-├─ lut.pkl
-├─ lut_metadata.json
-├─ summary.json
-└─ images/
-   ├─ raw/
-   ├─ processed/
-   ├─ masks/
-   ├─ overlays/
-   └─ debug_json/
-```
-
-Failed points are separated so that only missing or unstable points can be revisited. `resume=True` allows a 1089-point collection job to continue after interruption.
-
----
-
-## 4. Camera Undistortion and Same-frame Processing
-
-Each CloudGripper robot has its own camera intrinsic matrix `K` and distortion coefficient `D`. The calibration and runtime pipelines must use the exact same preprocessing order.
-
-```python
-img_raw, ts = robot.getImageBase()
-img_proc = undistort_image(K, D, img_raw)
-pred = detector.predict(img_proc)
-```
-
-A key implementation rule is to read the camera once and derive both raw and processed images from the **same frame**. Reading the camera separately for raw and processed views can silently compare different timestamps.
-
-<p align="center"><img src="../images/map05.png" alt="Raw and undistorted images from the same frame" width="820"/></p>
-
-After undistortion, some edge workspace positions can leave the visible image. For this reason, the valid calibration range is robot-specific; one early map used approximately `[0.05, 0.95] × [0.05, 0.95]`, while later robots used slightly different bounds.
-
----
-
-## 5. Building the Continuous Lookup Model
-
-<p align="center"><img src="../images/map06.png" alt="33 by 33 calibration grid overlay" width="760"/></p>
-
-Calibration produces measured correspondences:
+결과적으로 각 robot마다 다음과 같은 measured correspondence가 만들어진다.
 
 $$
 \mathcal{D}=\{(u_i,v_i,x_i,y_i)\}_{i=1}^{N}
 $$
 
-A runtime pixel rarely coincides exactly with a calibration sample. Therefore, directly selecting the nearest row in the table is insufficient.
+이 correspondence와 변환 model을 저장해 이후 runtime에서 해당 robot의 map으로 불러와 사용했다.
 
-<p align="center"><img src="../images/map07.png" alt="Clough-Tocher interpolation for pixel-to-workspace mapping" width="920"/></p>
+---
 
-The system constructs two independent 2D interpolators:
+## 5. Competition-Time Automatic Robot Matching
+
+Test period와 달리 competition에서는 **현재 어느 robot에 연결되었는지 알 수 없었다.**
+
+Competition 시작 후 robot마다 다시 33 × 33 map을 생성하는 것은 불가능하고, 몇 개의 calibration point를 새로 측정하는 것조차 task 수행 시간을 사용하게 된다.
+
+K-DAS는 competition 시작 시 **gripper를 calibration 목적으로 움직이지 않고 현재 위치 그대로 사용**했다.
+
+<!-- TODO: replace the flow below with ../images/map11.png: first-frame automatic robot/map matching -->
+
+```text
+Competition starts
+→ robot identity is unknown
+→ capture the first camera frame
+→ detect the current gripper center with YOLO
+→ compare it with prepared robot-specific maps
+→ select the most similar robot/map
+→ load the selected map
+→ start the task immediately
+```
+
+즉 competition에서는 새로운 map을 만드는 대신, **미리 생성해 둔 map 중 현재 robot에 해당하는 map을 찾는 과정만 수행했다.**
+
+이 방식으로 별도의 startup calibration 시간을 사용하지 않고 바로 Task 1 또는 Task 2를 시작할 수 있었다.
+
+---
+
+## 6. Runtime Pixel-to-Workspace Conversion
+
+Competition-time matching으로 현재 robot의 map이 선택되면, 이후 Task 1과 Task 2에서는 **선택된 map을 이용해 camera에서 검출한 pixel coordinate를 normalized workspace coordinate로 변환**했다.
+
+하지만 runtime에서 얻는 pixel `(u, v)`가 1089개의 calibration point 중 하나와 정확히 일치하는 경우는 거의 없다. 따라서 가장 가까운 한 점을 그대로 사용하는 대신, 주변 calibration point의 관계를 이용해 연속적인 좌표를 계산했다.
+
+K-DAS는 33 × 33 correspondence로부터 Clough–Tocher 2D interpolation을 구성했다.
 
 $$
 x=f_x(u,v), \qquad y=f_y(u,v)
 $$
 
-Implementation:
+<p align="center">
+  <img src="../images/map07.png" alt="Interpolation from measured pixel-workspace correspondences" width="920"/>
+</p>
 
-```python
-dataset = parse_dataset(calibration_csv, require_ok=True)
-lut = build_bidirectional_lookup(dataset, method="clough_tocher")
-save_lookup_table(lut, lut_path)
+Runtime에서는 선택된 robot map을 load한 뒤, 측정된 calibration point 사이를 보간해 `(x, y)`를 계산했다.
+
+```text
+Detected object / rope pixel (u, v)
+→ load selected robot map
+→ interpolate between measured calibration points
+→ normalized workspace coordinate (x, y)
+→ Task 1 / Task 2 calculation
 ```
 
-Clough-Tocher interpolation was selected because it provides a smooth piecewise-cubic surface over scattered 2D samples. Compared with a learned regression model, it also provides a clearer valid domain and makes detector error easier to distinguish from mapping error.
+Repository에서는 저장된 변환 model을 편의상 `LUT`라고 부르지만, 실제 변환은 단순 nearest-neighbor lookup이 아니라 **측정한 1089개 point 사이를 interpolation하여 연속적인 `(x, y)`를 계산하는 과정**이다.
 
 ---
 
-## 6. Runtime Conversion Interface
+## 7. Extending Coordinates Beyond the Reachable Workspace
 
-The saved map is loaded through a small mapper interface.
+33 × 33 map은 gripper가 실제로 이동할 수 있는 영역에서만 측정할 수 있다. 그런데 camera에서 보이는 object나 rope가 항상 그 영역 안에 완전히 들어오는 것은 아니었다.
 
-```python
-mapper = PixelToWorkspaceMapper(
-    lut_path,
-    clamp_to_workspace=False,
-    x_min=config.x_min,
-    x_max=config.x_max,
-    y_min=config.y_min,
-    y_max=config.y_max,
-)
-
-x, y = mapper.convert_one(u, v)
-```
-
-`clamp_to_workspace=False` is important during diagnosis. Silently clipping an invalid pixel to the nearest workspace boundary can hide extrapolation and detection failures.
-
-### Task 1
+예를 들어 square object의 네 corner 중 세 점은 mapping 영역 안에 있지만 한 점이 바깥에 있을 수 있다.
 
 ```text
-object center / corners / contour pixels
-→ pixel-to-workspace mapper
-→ pose and polygon
-→ rigid dynamics and push planning
+object corners:  ●──────●
+                 │      │
+workspace edge: ─●──────┼────────
+                        ●  ← outside measured region
 ```
 
-### Task 2
+이 경우 바깥쪽 corner는 LUT의 측정 범위를 벗어나기 때문에 정상적인 normalized coordinate를 얻을 수 없다. Rope 역시 일부 node가 workspace 밖에 있을 경우 전체 shape을 표현하기 어려워진다.
+
+### 7.1 Homography from the 33 × 33 map
+
+이 문제를 해결하기 위해 기존 33 × 33 map에서 얻은 `(x, y) ↔ (u, v)` correspondence를 이용해 homography를 계산했다.
+
+$$
+\mathbf{p}_{uv} \sim H_{xy\rightarrow uv}\mathbf{p}_{xy}
+$$
+
+Inverse homography를 이용하면 camera pixel에서 확장된 normalized coordinate를 계산할 수 있다.
+
+$$
+\mathbf{p}_{xy}^{ext} \sim H_{uv\rightarrow xy}\mathbf{p}_{uv}
+$$
+
+<p align="center">
+  <img src="../images/map10.png" alt="Reachable workspace and homography-based extended coordinates" width="900"/>
+</p>
+
+Homography를 이용하면 gripper가 직접 갈 수 없는 영역에 있는 object corner나 rope node도 하나의 coordinate system으로 표현할 수 있다.
+
+### 7.2 How We Checked the Homography
+
+Workspace 바깥에는 gripper를 직접 이동시킬 수 없기 때문에 homography가 만든 outside coordinate를 직접 측정해 검증할 방법이 없었다.
+
+그래서 **LUT와 homography를 모두 계산할 수 있는 workspace 내부 영역에서 두 결과를 비교**했다.
 
 ```text
-rope mask and skeleton pixels
-→ 20 ordered pixel nodes
-→ pixel-to-workspace mapper
-→ DER / Residual GNN / MPC / policy state
+Same pixel inside the measured workspace
+        ├─ LUT interpolation → xy_lut
+        └─ Homography        → xy_homo
+                         ↓
+                    compare error
 ```
+
+내부 영역에서 두 좌표의 차이가 충분히 작음을 확인한 뒤, object / rope의 state coordinate는 inside와 outside에서 서로 다른 변환을 섞지 않고 homography 기반 coordinate로 통일해 사용했다.
+
+단, workspace 바깥의 coordinate는 **state를 표현하기 위한 값**이며 실제 robot이 이동할 수 있는 command coordinate라는 의미는 아니다. Robot action을 생성할 때는 reachable workspace 여부를 별도로 확인했다.
 
 ---
 
-## 7. Validation
+## 8. Validation
 
-### 7.1 Calibration-point consistency
+### 8.1 Off-grid Mapping Validation
 
-The calibration CSV can be passed back through the LUT to verify serialization and interpolation construction. This error is often near machine precision because the same points were used to build the interpolator. It is a useful integrity check, but **not a generalization test**.
-
-### 7.2 Off-grid validation
-
-The meaningful test uses points that do not overlap the 33×33 grid.
+33 × 33 mapping point 자체에서 다시 검사하면 interpolation이 잘 만들어졌는지만 확인할 수 있다. 실제 변환 성능을 확인하기 위해 grid와 겹치지 않는 새로운 robot coordinate를 사용했다.
 
 ```text
-Generate 25 off-grid commands in [0.1, 0.9]
-→ move robot
-→ detect gripper pixel
-→ convert pixel through LUT
-→ compare mapped coordinate with commanded / robot-state coordinate
+Move gripper to an off-grid coordinate
+→ detect the gripper pixel
+→ convert the pixel using the saved map
+→ compare mapped coordinate with the commanded coordinate
 ```
 
-$$
-e=\sqrt{(x_{mapped}-x_{ref})^2+(y_{mapped}-y_{ref})^2}
-$$
-
-A report validation produced the following result.
+한 validation run에서는 다음 결과를 얻었다.
 
 | Metric | Result |
 |---|---:|
@@ -240,130 +265,60 @@ A report validation produced the following result.
 | Median error | 0.303 mm |
 | Maximum error | 0.522 mm |
 
-A separate notebook run recorded a mean error of 0.213 mm and a maximum error of 0.455 mm.
+<p align="center">
+  <img src="../images/map08.png" alt="Off-grid pixel-to-workspace validation" width="720"/>
+</p>
 
-<p align="center"><img src="../images/map08.png" alt="Example off-grid mapping error heatmap" width="720"/></p>
+### 8.2 Homography Overlap Check
 
-### 7.3 Why validation must be repeated per robot
-
-A Robot29 diagnostic session recorded a much larger mean error of 6.774 mm. This run used a different robot, calibration range and acquisition session and is not directly comparable with the validated result. However, it demonstrates that loading a LUT file is not enough: detector quality, robot-specific camera geometry, timestamp alignment and calibration completeness must be checked every time a map is rebuilt.
-
-<p align="center"><img src="../images/map09.png" alt="Mapping validation differences between robot sessions" width="850"/></p>
+Homography의 outside 영역은 직접 ground truth를 측정할 수 없기 때문에, workspace 내부에서 LUT interpolation과 homography coordinate를 비교했다. 이 검증은 outside accuracy를 직접 보장하는 것은 아니지만, measured workspace 안에서 두 방식이 얼마나 비슷한 coordinate를 만드는지 확인하는 기준으로 사용했다.
 
 ---
 
-## 8. Robot-specific Maps and Automatic Matching
+## 9. Use in Task 1 and Task 2
 
-A single LUT cannot be shared safely across all robots because each unit can differ in:
+<!-- TODO: add a combined Task 1 / Task 2 application figure (e.g. ../images/map12.png) showing detected pixels → normalized coordinates → planning input -->
 
-- camera mounting and fisheye distortion
-- gripper appearance and center offset
-- valid visible workspace range
-- image-to-axis orientation
-
-The competition environment could connect the code to an unknown robot. To handle this, multiple LUT candidates and calibration YAML files were preloaded. The gripper was moved to a safe probe point, its pixel center was detected, and each candidate LUT was evaluated against the known commanded workspace point. The LUT with the smallest probe error was selected for the current run.
+### Task 1 — Rigid Object Pushing
 
 ```text
-safe probe command (x, y)
-→ observed gripper pixel (u, v)
-→ convert with every candidate LUT
-→ compare candidate output with commanded point
-→ select minimum-error robot map
+camera image
+→ object segmentation / contour
+→ object pixel coordinates
+→ normalized coordinates
+→ pose / polygon / contact calculation
+→ push planning
 ```
 
-This matching process does not replace full calibration, but it allows a prepared set of robot-specific maps to be selected automatically at startup.
+물체 일부가 measured workspace 밖에 걸치는 경우에는 homography coordinate를 이용해 전체 polygon state를 유지하고, 실제 robot action은 reachable workspace 안에서만 생성했다.
 
----
-
-## 9. Control Map and Extended State Map
-
-The gripper-based LUT is defined only where the gripper can physically travel. In Task 2, some rope nodes can appear outside this reachable region, especially near the fixed end. Using the LUT outside its calibrated domain would be unsafe extrapolation.
-
-<p align="center"><img src="../images/map10.png" alt="Control map and extended state map separation" width="900"/></p>
-
-The final design separates two purposes.
-
-| Map | Method | Purpose |
-|---|---|---|
-| Control map | Clough-Tocher LUT | Accurate coordinate conversion inside reachable workspace; robot command and contact planning |
-| Extended state map | Homography | Represent rope nodes outside the control workspace; state description only |
-
-For the extended homography, central calibration points were used for training and boundary bands for testing. One test condition produced approximately `0.41 mm RMSE`, `0.35 mm mean error`, and `1.16 mm maximum error` when converted using a 150 mm workspace scale.
-
-An extended coordinate can describe an object state, but it must not automatically be treated as a reachable robot target.
-
----
-
-## 10. Failure Modes and Diagnostics
-
-### Detection failure
-
-- mask missing or too small
-- fewer than three valid frames
-- center standard deviation too large
-
-**Response:** record the point in `calibration_failed.csv`, save debug artifacts, and revisit it later.
-
-### Preprocessing mismatch
-
-- calibration uses undistorted image but runtime uses raw image
-- flip, rotation, crop or resize order differs
-
-**Response:** centralize preprocessing into one shared function and derive raw/proc from the same camera frame.
-
-### Out-of-domain conversion
-
-- pixel is outside the convex hull of calibration samples
-- gripper or object lies outside the control workspace
-
-**Response:** reject the command, use an extended state map only for representation, or recalibrate a wider visible region.
-
-### Temporal mismatch
-
-One notebook diagnostic showed a non-negligible difference between image and robot-state timestamps. This has little influence after the arm has fully settled, but can become a significant error source in moving-state validation.
-
-**Response:** log both timestamps and compare only synchronized or settled measurements.
-
----
-
-## 11. Recommended Repository Structure
+### Task 2 — Rope Manipulation
 
 ```text
-mapping/
-├─ README.md
-├─ src/
-│  ├─ gripper_detector.py
-│  ├─ calibration_collector.py
-│  ├─ lookup_builder.py
-│  ├─ pixel_to_workspace.py
-│  └─ validation.py
-├─ configs/
-│  ├─ calibration_robot06.yaml
-│  ├─ calibration_robot29.yaml
-│  └─ ...
-├─ models/
-│  └─ README.md              # YOLOv8-seg weight download / checksum
-├─ notebooks/
-│  ├─ workspace_mapping_workflow.ipynb
-│  └─ offgrid_validation.ipynb
-├─ data/
-│  └─ map/robotXX/           # generated artifacts; publish selectively
-└─ docs/
+camera image
+→ rope segmentation / skeleton
+→ ordered rope-node pixels
+→ normalized coordinates
+→ rope state
+→ DER / Residual GNN / MPC / policy
 ```
 
-Before public release, remove API tokens, private URLs and personal absolute paths. Runtime authentication should be loaded only from environment variables.
+Rope는 전체 node의 배치가 state이기 때문에 일부 node가 workspace 밖으로 나가더라도 삭제하지 않고 homography coordinate로 함께 표현했다.
 
 ---
 
-## 12. Takeaway
+## 10. Summary
 
-K-DAS mapping is a robot-specific calibration system that converts camera detections into continuous robot coordinates. It combines:
+K-DAS의 mapping 과정은 다음 세 가지 문제를 해결하기 위해 구성되었다.
 
-1. YOLOv8 segmentation-based gripper centroid detection,
-2. 33×33 measured pixel-workspace correspondences,
-3. shared fisheye undistortion for calibration and runtime,
-4. Clough-Tocher interpolation for continuous conversion,
-5. off-grid validation and robot-specific map management, and
-6. separation of command-safe control coordinates from extended state-only coordinates.
+1. **Map generation** — robot별 33 × 33 pixel–workspace correspondence를 미리 측정하고 interpolation map을 생성한다.
+2. **Automatic map matching** — competition 시작 시 첫 gripper observation을 이용해 현재 robot에 해당하는 map을 찾는다.
+3. **Runtime coordinate conversion** — 선택된 map과 homography를 이용해 Task 1 object와 Task 2 rope의 pixel coordinate를 normalized coordinate로 변환한다.
 
-> **The mapper is the geometric contract between perception and manipulation: every object, rope node and planned contact must cross the same validated coordinate transform before it becomes a robot action.**
+```text
+Generate maps before competition
+→ identify the connected robot at startup
+→ load its map
+→ convert camera pixels during runtime
+→ use the converted coordinates for Task 1 / Task 2
+```
