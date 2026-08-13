@@ -6,11 +6,11 @@
 
 **Task 1 · Model-Based Closed-Loop Planar Pushing · Team K-DAS**
 
-이 모듈은 관측에서 얻은 물체의 중심, 방향, contour와 keypoint를 planner가 사용할 수 있는 **workspace geometry state**로 구성하고, 현재 형상과 목표 형상을 같은 기준에서 비교하는 역할을 한다.
+This module converts the object center, orientation, contour, and keypoints obtained from observation into a **workspace geometry state** that can be used by the planner, and aligns the current and target shapes under a common geometric convention.
 
-Task 1에서는 중심 위치만 맞추는 것으로는 충분하지 않다. 사각형과 T자형은 회전 오차가 실제 접촉 위치와 IoU에 직접 영향을 주며, 비대칭 형상에서는 중심을 정의하는 방식 자체가 목표 위치를 바꿀 수 있다. 따라서 K-DAS는 물체를 polygon과 pose로 표현하고, 형상별 대칭성과 기준축 차이를 반영한 정합 절차를 별도로 구성하였다.
+In Task 1, matching only the object center is not sufficient. For square and T-shaped objects, orientation error directly affects both the actual contact location and IoU. For asymmetric shapes, even the definition of the object center can shift the reconstructed target position. K-DAS therefore represents objects using polygons and poses, with separate alignment procedures that account for shape-specific symmetry and differences in reference axes.
 
-> 이 문서는 image-space detection이 아니라 **workspace에서의 형상 표현, current-target alignment와 IoU 계산**을 다룬다. 픽셀 좌표를 workspace 좌표로 변환하는 과정은 공통 `mapping/README.md`에서 분리한다.
+> This document focuses on **shape representation, current-target alignment, and IoU computation in workspace coordinates**, rather than image-space detection. Pixel-to-workspace coordinate conversion is described separately in the shared `mapping/README.md`.
 
 ---
 
@@ -36,7 +36,7 @@ Compute pose error, shape error and IoU
 Pass normalized state to planning and evaluation
 ```
 
-이 모듈의 핵심 출력은 다음과 같은 형태로 정리할 수 있다.
+The main output of this module can be represented as follows.
 
 ```python
 geometry_state = {
@@ -50,7 +50,7 @@ geometry_state = {
 }
 ```
 
-관련 문서:
+Related documents:
 
 - Task 1 overview: [`../README.md`](../README.md)
 - Planning and candidate selection: [`../planning/README.md`](../planning/README.md)
@@ -60,13 +60,13 @@ geometry_state = {
 
 ## 2. Pose and Polygon Representation
 
-물체 pose는 작업 평면에서의 중심 위치와 회전각으로 표현한다.
+The object pose is represented by its center position and rotation angle on the workspace plane.
 
 $$
 q=[x,\ y,\ \theta]
 $$
 
-Local template의 꼭짓점 $p_i^{local}$은 회전과 이동을 통해 workspace 좌표로 변환된다.
+Each vertex $p_i^{local}$ of a local template is transformed into workspace coordinates by rotation and translation.
 
 $$
 R(\theta)=
@@ -80,18 +80,18 @@ $$
 p_i^{world}=c+R(\theta)p_i^{local}
 $$
 
-여기서 $c=[x,y]^T$는 물체 중심이다. 이 표현을 사용하면 planner는 중심과 회전각을 별도로 다룰 수 있고, 동시에 실제 polygon이 workspace의 어느 영역을 차지하는지도 계산할 수 있다.
+Here, $c=[x,y]^T$ is the object center. This representation allows the planner to handle translation and orientation separately while also computing the actual region occupied by the polygon in the workspace.
 
 ### 2.1 Shape-specific geometry
 
 | Shape | Geometry representation | Orientation handling |
 |---|---|---|
-| Circle | center, radius, sampled boundary points | 회전 영향이 작으므로 orientation 비중이 낮음 |
-| Square | ordered four vertices | 90° rotational symmetry를 별도로 처리 |
-| T-shape | ordered eight vertices | 비대칭 형상이므로 기준축과 vertex correspondence가 중요 |
-| Unknown / surprise shape | detected contour or simplified polygon | 가능한 한 template hard-coding을 줄이고 contour-level 비교 사용 |
+| Circle | center, radius, sampled boundary points | orientation has low weight because rotation has little geometric effect |
+| Square | ordered four vertices | 90° rotational symmetry is handled explicitly |
+| T-shape | ordered eight vertices | reference axis and vertex correspondence are important because the shape is asymmetric |
+| Unknown / surprise shape | detected contour or simplified polygon | reduce template hard-coding where possible and use contour-level comparison |
 
-사각형과 T자형을 꼭짓점 집합으로 표현하고, 원형도 둘레를 일정 개수의 점으로 sampling하면 서로 다른 물체를 공통 polygon 연산으로 비교할 수 있다.
+By representing square and T-shaped objects as vertex sets, and circles as uniformly sampled boundary points, different object types can be compared using a common set of polygon operations.
 
 ---
 
@@ -101,39 +101,39 @@ $$
   <img src="../../images/t1_geometry03.png" alt="IoU-based shape comparison" width="700"/>
 </p>
 
-현재 형상 $S_{current}$와 목표 형상 $S_{target}$의 겹침은 IoU로 계산한다.
+The overlap between the current shape $S_{current}$ and target shape $S_{target}$ is measured using IoU.
 
 $$
 \mathrm{IoU}=\frac{\mathrm{Area}(S_{current}\cap S_{target})}
 {\mathrm{Area}(S_{current}\cup S_{target})}
 $$
 
-- `IoU = 1.0`: 두 형상이 완전히 겹침
-- `IoU = 0.0`: 두 형상이 전혀 겹치지 않음
+- `IoU = 1.0`: the two shapes overlap completely
+- `IoU = 0.0`: the two shapes do not overlap at all
 
-IoU를 사용한 이유는 다음과 같다.
+IoU was used for the following reasons.
 
-1. 중심 위치 오차와 회전 오차를 하나의 형상 지표로 반영한다.
-2. 같은 중심에 있어도 방향이 다른 사각형과 T자형을 구분한다.
-3. planner의 내부 pose error와 대회 evaluator의 실제 shape overlap을 연결한다.
-4. surprise shape에서도 contour가 존재하면 동일한 방식으로 평가할 수 있다.
+1. It captures both center-position error and orientation error in a single shape-level metric.
+2. It distinguishes squares and T-shapes with the same center but different orientations.
+3. It connects the planner's internal pose error with the actual shape overlap used by the competition evaluator.
+4. It can also be applied to surprise shapes as long as a contour is available.
 
-다만 IoU 하나만으로 candidate를 선택하면 작은 형상 변화에 민감하거나, 멀리 떨어진 상태에서 gradient가 부족할 수 있다. 따라서 planner 내부에서는 pose error와 reference-path progress를 함께 사용하고, IoU는 성공 판정과 최종 형상 품질 확인에 사용하였다.
+However, using IoU alone for candidate selection can be sensitive to small shape changes and provides little useful gradient when the current and target objects are far apart. The planner therefore combines pose error with reference-path progress internally, while IoU is used mainly for success evaluation and final shape-quality checks.
 
 ---
 
 ## 4. Why Shape Alignment Required a Separate Module
 
-Perception이 안정적으로 동작하더라도, detector와 planner가 형상을 서로 다른 기준으로 해석하면 잘못된 target pose가 만들어진다.
+Even when perception is stable, an incorrect target pose can be produced if the detector and planner interpret the same shape using different geometric conventions.
 
-대표적인 문제는 다음과 같았다.
+The main issues were:
 
-- detector orientation과 canonical template orientation의 기준축 차이
-- 꼭짓점 평균 중심과 polygon 면적중심의 차이
-- T자형 target을 중심과 각도 하나로 축약하면서 생기는 형상 손실
-- 사각형의 동일한 자세가 서로 다른 vertex index로 반환되는 문제
+- different reference axes between detector orientation and canonical template orientation
+- different center definitions, such as vertex-average center versus polygon area centroid
+- loss of geometric information when a T-shaped target is reduced to only one center and one angle
+- identical square poses being returned with different starting vertex indices
 
-이러한 오차는 물리 모델이나 path planner에서 해결할 수 있는 문제가 아니다. 후보 action을 생성하기 전에 current와 target geometry를 같은 기준으로 정규화해야 한다.
+These errors cannot be corrected by the physics model or path planner. Current and target geometry must first be normalized under the same convention before generating candidate actions.
 
 ---
 
@@ -143,24 +143,24 @@ Perception이 안정적으로 동작하더라도, detector와 planner가 형상�
   <img src="../../images/t1_geometry04.png" alt="T-shape detector and planner basis mismatch" width="900"/>
 </p>
 
-초기 T자형 planner에서는 시각화상의 target 방향과 planner가 내부적으로 정렬하려는 방향이 일치하지 않았다. 원인은 두 모듈의 orientation 정의가 달랐기 때문이다.
+In the initial T-shape planner, the target orientation shown in visualization did not match the orientation that the planner was internally trying to align with. The cause was a difference in how orientation was defined between the two modules.
 
-- **Detector**: image contour에서 추정한 stem 방향을 기준으로 orientation 계산
-- **Planner**: config에 정의된 `T_BASE` canonical shape의 축을 기준으로 orientation 해석
+- **Detector**: computes orientation from the stem direction estimated from the image contour
+- **Planner**: interprets orientation using the axis of the canonical `T_BASE` shape defined in the configuration
 
-두 기준 사이에는 약 90°의 차이가 있었다. 원형은 방향성이 없고 정사각형은 90° 대칭성을 가지므로 같은 문제가 쉽게 드러나지 않았지만, 비대칭 T자형에서는 명확한 target mismatch로 나타났다.
+The two conventions differed by approximately 90°. This issue was less visible for circles, which have no meaningful orientation, and squares, which have 90° rotational symmetry. For the asymmetric T-shape, however, it produced a clear target mismatch.
 
 ### 5.1 Correction rule
 
-처음에는 current observation에만 90° correction을 적용했으나, target에는 동일한 보정이 적용되지 않아 여전히 서로 다른 frame에서 비교되는 문제가 남았다.
+Initially, a 90° correction was applied only to the current observation. Because the same correction was not applied to the target, the two shapes were still being compared in different frames.
 
-최종적으로는 current와 target 모두에 동일한 basis correction을 적용하였다.
+The final implementation applied the same basis correction to both the current and target shapes.
 
 $$
 \theta_{planner}=\theta_{detector}+\frac{\pi}{2}
 $$
 
-중요한 점은 90° 자체가 보편적인 T자형 규칙이 아니라, **해당 detector와 canonical template 사이의 기준축 차이를 보정한 값**이라는 것이다. 공개 코드에서는 이를 shape configuration으로 분리해야 한다.
+The important point is that the 90° correction is not a general rule for T-shaped objects. It compensates for the **specific reference-axis difference between the detector and the canonical template**. In a public implementation, this offset should be stored as part of the shape configuration.
 
 ---
 
@@ -170,44 +170,44 @@ $$
   <img src="../../images/t1_geometry05.png" alt="Raw T-shape target and reconstructed planner target" width="780"/>
 </p>
 
-초기 구현은 대회 측에서 제공한 T자형 8개 꼭짓점을 그대로 planner에 전달하지 않았다. 먼저 target을 중심점과 회전각으로 축약하고, 내부 canonical T template를 해당 pose에 다시 배치했다.
+The initial implementation did not pass all eight T-shape target vertices provided by the competition directly to the planner. Instead, the target was first reduced to a center point and rotation angle, and the internal canonical T template was then placed at that reconstructed pose.
 
-이 과정에서는 target pose를 계산할 때 사용한 중심 정의와 canonical template를 배치할 때 사용한 기준점이 달랐다.
+During this process, the center definition used to estimate the target pose differed from the reference point used to place the canonical template.
 
 <p align="center">
   <img src="../../images/t1_geometry06.png" alt="Difference between vertex-average center and polygon area centroid" width="620"/>
 </p>
 
-내부 T template를 기준으로 분석했을 때 다음 차이가 확인되었다.
+For the internal T template, the following difference was observed.
 
-- Vertex-average center: 약 **2.65 mm**
-- Polygon area centroid: 약 **4.24 mm**
-- 두 중심 정의의 차이: 약 **1.59 mm**
+- Vertex-average center: approximately **2.65 mm**
+- Polygon area centroid: approximately **4.24 mm**
+- Difference between the two center definitions: approximately **1.59 mm**
 
-1.59 mm는 작아 보일 수 있지만, 크기가 작은 CloudGripper object에서는 target polygon 전체가 평행 이동하는 오차로 이어진다. 특히 T자형은 비대칭이므로 중심 정의의 차이가 target alignment에 직접 반영된다.
+A 1.59 mm difference may appear small, but for the compact CloudGripper objects it shifts the entire reconstructed target polygon. Because the T-shape is asymmetric, the center definition directly affects target alignment.
 
 ---
 
 ## 7. Eight-point Rigid Alignment for T-shape
 
-중심과 각도 하나로 target을 다시 만드는 대신, 대회 target의 8개 꼭짓점 전체를 직접 사용하도록 수정하였다.
+Instead of reconstructing the target from a single center and angle, the planner was modified to use all eight target vertices directly.
 
 <p align="center">
   <img src="../../images/t1_geometry07.png" alt="Eight-point rigid alignment objective" width="650"/>
 </p>
 
-Canonical T template의 꼭짓점을 $p_i$, 실제 target 꼭짓점을 $q_i$라고 하면, 두 형상을 가장 잘 겹치게 만드는 회전과 이동을 찾는다.
+Let $p_i$ denote the vertices of the canonical T template and $q_i$ the vertices of the actual target. The alignment solves for the rotation and translation that best overlap the two shapes.
 
 $$
 R^\star,t^\star=\arg\min_{R,t}\sum_i \lVert Rp_i+t-q_i\rVert^2
 $$
 
-이 정합은 다음 의미를 가진다.
+This alignment has the following properties.
 
-* 중심점 하나가 아니라 **형상 전체**를 이용한다.
-* target의 실제 크기와 비대칭 구조를 더 많이 보존한다.
-* 회전과 이동을 동시에 계산한다.
-* planner canonical shape와 evaluator target 사이의 offset을 줄인다.
+* It uses the **entire shape**, rather than a single center point.
+* It preserves more of the target's actual scale and asymmetric structure.
+* It estimates rotation and translation together.
+* It reduces the offset between the planner's canonical shape and the evaluator target.
 
 <p align="center">
   <img src="../../images/t1_geometry08.png" alt="T-shape target alignment before and after correction" width="900"/>
@@ -215,7 +215,7 @@ $$
 
 ### 7.1 Required preprocessing
 
-Rigid alignment이 안정적으로 동작하려면 current와 target의 8개 vertex가 일관된 순서를 가져야 한다. Perception 단계에서는 concave corner를 포함한 keypoint를 정렬하고, geometry 단계에서는 동일한 canonical order를 기준으로 correspondence를 구성한다.
+For rigid alignment to remain stable, the eight current and target vertices must follow a consistent ordering. During perception, keypoints including the concave corners are ordered first, and the geometry module then builds correspondences using the same canonical vertex order.
 
 ### 7.2 Development-stage validation
 
@@ -223,7 +223,7 @@ Rigid alignment이 안정적으로 동작하려면 current와 target의 8개 ver
   <img src="../../images/t1_geometry09.png" alt="T-shape alignment test examples" width="900"/>
 </p>
 
-7주차 초기 검증에서는 일부 run이 높은 IoU에 도달했지만 전체 성능은 아직 불안정했다.
+In the initial Week 7 validation, some runs reached high IoU, but overall performance was still unstable.
 
 | Metric                  | Development-stage result |
 | ----------------------- | -----------------------: |
@@ -232,7 +232,7 @@ Rigid alignment이 안정적으로 동작하려면 current와 target의 8개 ver
 | Best observed max IoU   |               **0.8698** |
 | Mean step at max IoU    |                 **10.1** |
 
-이 결과는 geometry correction만으로 전체 Task 1이 완성되는 것은 아니라는 점을 보여준다. 이후 candidate scoring, approach path와 execution time 개선이 추가되면서 최종 평가에서 T와 T-long은 각각 **52.24**, **57.21**의 Top-3 average score를 기록했다.
+These results showed that geometry correction alone was not enough to complete the full Task 1 system. After further improvements to candidate scoring, approach paths, and execution time, T and T-long achieved final Top-3 average scores of **52.24** and **57.21**, respectively.
 
 ---
 
@@ -247,15 +247,15 @@ Rigid alignment이 안정적으로 동작하려면 current와 target의 8개 ver
   <img src="../../images/t1_geometry10.png" alt="Square alignment examples with vertex-order ambiguity" width="850"/>
 </p>
 
-사각형은 방향성이 있지만 동시에 90° rotational symmetry를 갖는다. 같은 물리적 자세라도 contour detector가 반환하는 첫 번째 꼭짓점은 프레임마다 달라질 수 있다.
+A square has a meaningful orientation but also has 90° rotational symmetry. Even for the same physical pose, the first vertex returned by the contour detector can change from frame to frame.
 
-예를 들어 current vertex order가 `[1,2,3,4]`이고 target이 `[2,3,4,1]`로 들어오면 두 polygon은 사실상 같은 정렬 상태일 수 있다. 그러나 index를 고정한 채 비교하면 큰 shape error가 계산되고, planner가 이미 정렬된 사각형을 불필요하게 다시 회전시킬 수 있다.
+For example, if the current vertex order is `[1,2,3,4]` and the target is returned as `[2,3,4,1]`, the two polygons may already represent the same physical alignment. If the indices are compared directly without accounting for this shift, a large shape error can be computed and the planner may unnecessarily rotate a square that is already aligned.
 
 ---
 
 ## 9. Cyclic Vertex Matching for Square
 
-사각형에서는 target vertex sequence를 네 가지 cyclic shift로 이동시키며 비교하고, 평균 거리 오차가 가장 작은 correspondence를 사용한다.
+For squares, the target vertex sequence is compared under all four cyclic shifts, and the correspondence with the smallest mean distance error is selected.
 
 $$
 E_{square}=\min_{k\in\{0,1,2,3\}}
@@ -276,9 +276,9 @@ for shift in range(4):
   <img src="../../images/t1_geometry11.png" alt="Square cyclic vertex matching" width="900"/>
 </p>
 
-이 방식은 사각형의 vertex start index가 달라도 같은 physical alignment로 인정한다. 특히 목표 근처에서 불필요한 correction rotation을 줄이는 데 중요했다.
+This method treats different starting vertex indices as the same physical alignment. It was particularly important near the goal, where it reduced unnecessary corrective rotations.
 
-> 현재 구현은 동일한 winding direction을 유지한 cyclic shift를 비교한다. Detector의 clockwise/counter-clockwise ordering까지 바뀔 수 있는 환경에서는 winding normalization을 먼저 수행해야 한다.
+> The current implementation compares cyclic shifts while preserving the same winding direction. In environments where the detector may switch between clockwise and counter-clockwise ordering, winding normalization should be applied first.
 
 ---
 
@@ -288,7 +288,7 @@ for shift in range(4):
   <img src="../../images/t1_geometry12.png" alt="Square validation table" width="850"/>
 </p>
 
-사각형 symmetry correction과 실행 경로 개선이 적용된 11회의 테스트에서는 모든 run이 최종 IoU 0.8 이상을 기록했다.
+Across 11 tests after applying the square symmetry correction and execution-path improvements, every run achieved a final IoU of at least 0.8.
 
 | Metric | Result |
 |---|---:|
@@ -299,26 +299,24 @@ for shift in range(4):
 | Average total time | **97.65 s** |
 | Average time per step | **24.41 s** |
 
+Runs 10 and 11 both reached a final IoU of 0.90, and Run 11 satisfied the success threshold in 2 steps and 46.01 seconds. These results indicate that, when integrated with the full planner, square geometry normalization reduced repeated unnecessary rotations and made near-goal alignment more stable.
 
-
-10차와 11차 run에서는 최종 IoU 0.90을 기록했으며, 11차는 2 step, 46.01초 만에 성공 기준을 만족했다. 이 결과는 square geometry normalization이 전체 planner와 결합되었을 때 반복적인 불필요 회전을 줄이고 목표 근처 정렬을 안정화했음을 보여준다.
-
-다만 이 결과는 symmetry correction만의 단독 ablation이 아니다. 동일 기간에 approach-path waypoint 제한과 실행 시간 관련 개선도 함께 반영되었으므로, 전체 system configuration의 검증 결과로 해석해야 한다.
+However, these results are not an isolated ablation of the symmetry correction. Approach-path waypoint limits and execution-time improvements were introduced during the same development period, so the results should be interpreted as validation of the complete system configuration.
 
 ---
 
 ## 11. Handling Surprise Shapes
 
-최종 평가에는 Plus와 Organic object가 surprise shape로 포함되었다. 이 형상들은 T자형보다 더 복잡한 concavity를 가지거나 명확한 canonical axis를 정의하기 어렵다.
+The final evaluation included Plus and Organic objects as surprise shapes. These objects have more complex concavity than the T-shape or do not have an obvious canonical axis.
 
-K-DAS는 다음 원칙으로 대응했다.
+K-DAS handled these objects using the following principles.
 
-- 가능하면 detection contour를 직접 polygon으로 유지
-- 중심과 orientation 하나로 과도하게 축약하지 않음
-- candidate contact point를 contour에서 sampling
-- IoU와 contour-level geometry를 공통 평가 기준으로 사용
+- preserve the detected contour directly as a polygon whenever possible
+- avoid reducing the shape too aggressively to a single center and orientation
+- sample candidate contact points directly from the contour
+- use IoU and contour-level geometry as common evaluation criteria
 
-최종 Top-3 average score는 Plus **34.47**, Organic **37.82**였다. Seen object보다 낮은 결과였지만, 특정 template만 가정한 시스템이 아니라 contour 기반 공통 interface를 유지한 덕분에 unseen object에서도 유효한 push를 수행할 수 있었다.
+The final Top-3 average scores were **34.47** for Plus and **37.82** for Organic. Although these scores were lower than those of the seen objects, maintaining a common contour-based interface rather than assuming only fixed templates allowed the system to execute valid pushes on unseen objects.
 
 <p align="center">
   <img src="../../images/t1_geometry14.png" alt="Task 1 object-wise final performance" width="850"/>
@@ -328,7 +326,7 @@ K-DAS는 다음 원칙으로 대응했다.
 
 ## 12. Interface to Planning
 
-Geometry module은 planner에 다음 정보를 제공한다.
+The geometry module provides the planner with the following information.
 
 ```python
 aligned = {
@@ -343,15 +341,15 @@ aligned = {
 }
 ```
 
-Planner는 이 상태를 이용하여 다음 작업을 수행한다.
+The planner uses this state to:
 
-- reference pose path 생성
-- candidate별 predicted next polygon 계산
-- target과의 pose / shape error 평가
-- success threshold 판단
-- 목표 근처 correction 필요 여부 판단
+- generate a reference pose path
+- compute the predicted next polygon for each candidate
+- evaluate pose and shape error relative to the target
+- determine whether the success threshold has been reached
+- decide whether near-goal correction is required
 
-Geometry와 planning을 분리함으로써, 물리 모델이나 candidate generator를 변경하더라도 current-target 정합 규칙은 일관되게 유지할 수 있다.
+By separating geometry from planning, the current-target alignment rules remain consistent even when the physics model or candidate generator is modified.
 
 ---
 
@@ -359,23 +357,23 @@ Geometry와 planning을 분리함으로써, 물리 모델이나 candidate genera
 
 ### 13.1 Wrong vertex ordering
 
-T자형 8-point correspondence가 흔들리면 rigid alignment가 완전히 다른 회전을 선택할 수 있다. Vertex ordering validation과 polygon winding normalization이 필요하다.
+If the eight-point correspondence for the T-shape becomes inconsistent, rigid alignment can select a completely different rotation. Vertex-order validation and polygon winding normalization are required.
 
 ### 13.2 Basis correction applied to one side only
 
-Current에만 correction을 적용하고 target에는 적용하지 않으면 서로 다른 coordinate convention을 비교하게 된다. Basis correction은 current와 target 양쪽에 동일하게 적용해야 한다.
+If the correction is applied only to the current shape but not the target, the system compares two different coordinate conventions. The same basis correction must be applied to both current and target geometry.
 
 ### 13.3 Template over-simplification
 
-비대칭 또는 surprise shape를 중심과 orientation 하나로만 축약하면 실제 contour가 손실된다. 가능한 경우 target polygon 자체를 유지해야 한다.
+Reducing an asymmetric or surprise shape to only one center and orientation loses information from the actual contour. The target polygon itself should be preserved whenever possible.
 
 ### 13.4 Symmetry ignored
 
-Square와 같이 대칭성이 있는 물체에서 fixed vertex index comparison을 사용하면 불필요한 회전 action이 발생할 수 있다. Shape별 symmetry group을 configuration으로 관리해야 한다.
+For symmetric objects such as squares, fixed vertex-index comparison can produce unnecessary rotation actions. Shape-specific symmetry groups should be managed through configuration.
 
 ### 13.5 IoU-only optimization
 
-초기 상태에서 overlap이 거의 없으면 IoU만으로 action quality를 구분하기 어렵다. Pose error, progress와 path feasibility를 함께 사용해야 한다.
+When the initial overlap is close to zero, IoU alone provides little information for distinguishing action quality. Pose error, progress, and path feasibility should be considered together.
 
 ---
 
@@ -400,7 +398,7 @@ task1/
    │  └─ test_square_symmetry.py
 ```
 
-Shape configuration에는 다음 항목을 명시하는 것이 적절하다.
+The following items are appropriate to define in each shape configuration.
 
 - canonical keypoints
 - orientation basis offset
@@ -413,12 +411,12 @@ Shape configuration에는 다음 항목을 명시하는 것이 적절하다.
 ---
 
 
-> 모든 시각 자료는 repository 최상위 `images/` 폴더에서 공통 관리한다.
+> All visual materials are managed in the repository-level `images/` directory.
 
 ## 15. Takeaway
 
-Task 1의 geometry module은 단순히 contour를 polygon으로 바꾸는 전처리 단계가 아니다. 이 모듈은 detector, evaluator와 planner가 물체의 방향과 중심을 **같은 기준으로 해석하도록 만드는 정합 계층**이다.
+The Task 1 geometry module is not simply a preprocessing step that converts contours into polygons. It is the **alignment layer that ensures the detector, evaluator, and planner interpret object orientation and center using the same geometric convention**.
 
-K-DAS는 T자형에서 detector–planner의 90° basis mismatch와 중심 정의 차이를 분석하고, 8개 꼭짓점 전체를 사용하는 rigid alignment로 target geometry를 보존했다. 사각형에서는 90° 대칭성을 반영한 cyclic vertex matching을 적용하여 이미 정렬된 물체를 불필요하게 다시 회전시키는 문제를 줄였다.
+For the T-shape, K-DAS identified a 90° detector-planner basis mismatch and a difference in center definitions, then preserved the target geometry using rigid alignment over all eight vertices. For squares, cyclic vertex matching was introduced to account for 90° symmetry and reduce unnecessary rotations of objects that were already aligned.
 
-> **정확한 pushing은 좋은 물리 모델만으로 시작되지 않는다. 현재 형상과 목표 형상을 동일한 기하 기준으로 표현하는 것에서 시작된다.**
+> **Accurate pushing does not begin with a good physics model alone. It begins by representing the current and target shapes under the same geometric convention.**
