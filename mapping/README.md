@@ -28,7 +28,7 @@ robot identity unknown
 
 ---
 
-## 1. Why Mapping Is Needed
+## 1. From Camera Pixels to Workspace Coordinates
 
 Camera와 robot은 서로 다른 좌표계를 사용한다.
 
@@ -59,7 +59,7 @@ rope node pixels
 
 ---
 
-## 2. Why Robot-Specific Maps Were Needed
+## 2. Why Each Robot Needed Its Own Map
 
 CloudGripper의 command coordinate는 공통적으로 normalized `(x, y)`를 사용하지만, 동일한 `(x, y)`가 camera image에서 나타나는 pixel 위치는 robot마다 조금씩 달랐다.
 
@@ -223,23 +223,9 @@ $$
 
 Homography를 이용하면 gripper가 직접 갈 수 없는 영역에 있는 object corner나 rope node도 하나의 coordinate system으로 표현할 수 있다.
 
-### 7.2 How We Checked the Homography
+Homography로 계산한 좌표는 **workspace 경계 밖까지 object / rope state를 표현하기 위한 좌표**로 사용했다. 반면 실제 robot command는 gripper가 도달 가능한 workspace 내부에서만 생성했다.
 
-Workspace 바깥에는 gripper를 직접 이동시킬 수 없기 때문에 homography가 만든 outside coordinate를 직접 측정해 검증할 방법이 없었다.
-
-그래서 **LUT와 homography를 모두 계산할 수 있는 workspace 내부 영역에서 두 결과를 비교**했다.
-
-```text
-Same pixel inside the measured workspace
-        ├─ LUT interpolation → xy_lut
-        └─ Homography        → xy_homo
-                         ↓
-                    compare error
-```
-
-내부 영역에서 두 좌표의 차이가 충분히 작음을 확인한 뒤, object / rope의 state coordinate는 inside와 outside에서 서로 다른 변환을 섞지 않고 homography 기반 coordinate로 통일해 사용했다.
-
-단, workspace 바깥의 coordinate는 **state를 표현하기 위한 값**이며 실제 robot이 이동할 수 있는 command coordinate라는 의미는 아니다. Robot action을 생성할 때는 reachable workspace 여부를 별도로 확인했다.
+Workspace 바깥에서는 ground truth coordinate를 직접 측정할 수 없기 때문에, homography의 정확도는 Section 8.2에서 **측정 가능한 내부 영역을 이용한 overlap test**로 별도 검증했다.
 
 ---
 
@@ -247,31 +233,66 @@ Same pixel inside the measured workspace
 
 ### 8.1 Off-grid Mapping Validation
 
-33 × 33 mapping point 자체에서 다시 검사하면 interpolation이 잘 만들어졌는지만 확인할 수 있다. 실제 변환 성능을 확인하기 위해 grid와 겹치지 않는 새로운 robot coordinate를 사용했다.
+Calibration에 사용한 33 × 33 grid point를 다시 map에 입력하면, 이미 측정에 사용한 점을 얼마나 잘 재현하는지만 확인하게 된다. 실제 runtime에서도 grid 사이의 새로운 위치를 안정적으로 변환할 수 있는지 확인하기 위해 **calibration point와 겹치지 않는 off-grid 위치**에서 별도 검증을 수행했다.
+
+Workspace 내부 `[0.1, 0.9]` 범위에서 25개의 test coordinate를 선택하고, 각 point에서 다음 과정을 반복했다.
 
 ```text
-Move gripper to an off-grid coordinate
-→ detect the gripper pixel
+Move gripper to an off-grid workspace coordinate
+→ detect the gripper center pixel (u, v)
 → convert the pixel using the saved map
-→ compare mapped coordinate with the commanded coordinate
+→ compare mapped (x, y) with the robot coordinate
 ```
 
-한 validation run에서는 다음 결과를 얻었다.
+오차는 robot coordinate와 mapping 결과 사이의 Euclidean distance로 계산했다.
+
+$$
+E = \left\|(x_{robot}, y_{robot})-(x_{mapped}, y_{mapped})\right\|_2
+$$
 
 | Metric | Result |
 |---|---:|
 | Valid samples | 25 / 25 |
+| Mean error (normalized) | 0.001816 |
+| Median error (normalized) | 0.002021 |
+| Maximum error (normalized) | 0.003480 |
 | Mean error | 0.272 mm |
 | Median error | 0.303 mm |
 | Maximum error | 0.522 mm |
 
 <p align="center">
-  <img src="../images/map08.png" alt="Off-grid pixel-to-workspace validation" width="720"/>
+  <img src="../images/map08.png" alt="Off-grid pixel-to-workspace mapping error heatmap" width="720"/>
 </p>
+
+약 150 mm 크기의 workspace를 기준으로 대부분의 off-grid error가 sub-millimeter 범위에 있었으며, 이 검증을 통해 **33 × 33 측정점 사이의 새로운 위치에서도 mapping을 사용할 수 있는지** 확인했다.
 
 ### 8.2 Homography Overlap Check
 
-Homography의 outside 영역은 직접 ground truth를 측정할 수 없기 때문에, workspace 내부에서 LUT interpolation과 homography coordinate를 비교했다. 이 검증은 outside accuracy를 직접 보장하는 것은 아니지만, measured workspace 안에서 두 방식이 얼마나 비슷한 coordinate를 만드는지 확인하는 기준으로 사용했다.
+Homography를 도입한 목적은 LUT가 정의되지 않는 workspace 바깥의 object corner나 rope node까지 좌표로 표현하는 것이었다. 하지만 gripper가 workspace 바깥으로 이동할 수 없기 때문에, outside coordinate에는 직접 비교할 ground truth `(x, y)`가 없다.
+
+따라서 검증 가능한 workspace 내부에서 calibration point를 **train region과 outer-band test region으로 분리**했다. 중앙부의 point만 이용해 homography를 계산한 뒤, 학습에 사용하지 않은 경계 영역의 known `(x, y)`를 얼마나 잘 복원하는지 비교했다.
+
+```text
+33 × 33 measured correspondences
+→ use the center region to fit homography
+→ keep the outer band as test points
+→ pixel (u, v) → homography → predicted (x, y)
+→ compare with measured test (x, y)
+```
+
+Train region의 크기를 세 가지로 바꾸어 확인했으며, homography를 구성할 때 더 넓은 calibration 영역을 포함할수록 boundary test error가 감소하는 경향을 확인했다. 대표적인 중간 설정의 결과는 다음과 같다.
+
+| Metric | Normalized | Approx. physical error (150 mm scale) |
+|---|---:|---:|
+| RMSE | 0.0027148 | 0.41 mm |
+| Mean error | 0.0023446 | 0.35 mm |
+| Maximum error | 0.0077049 | 1.16 mm |
+
+<p align="center">
+  <img src="../images/map09.png" alt="Homography train-region and outer-band validation" width="980"/>
+</p>
+
+실제 사용 시에는 일부 point만 사용하는 것이 아니라 **33 × 33 calibration의 1089개 correspondence 전체로 homography를 구성**했다. 이 overlap test가 workspace 바깥 좌표의 ground truth를 직접 보장하는 것은 아니지만, 측정 가능한 영역에서 homography가 기존 coordinate relation을 어느 정도 유지하는지 확인하는 검증으로 사용했다.
 
 ---
 
