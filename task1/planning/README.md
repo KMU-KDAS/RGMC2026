@@ -6,9 +6,9 @@
 
 **Task 1 · Model-Based Closed-Loop Planar Pushing · Team K-DAS**
 
-이 모듈은 현재 물체 상태와 목표 형상 사이에서 **어디를, 어느 방향으로, 얼마나 밀 것인지**를 결정한다. 여러 push candidate를 생성하고, 각 후보를 1-step rigid-body dynamics model로 예측한 뒤, 기준 경로상의 후보별 중간 목표와 비교한다. 이후 실제 로봇이 충돌 없이 시작점까지 접근할 수 있는 후보만 남겨 최종 action을 선택한다.
+This module determines **where to push, in which direction, and by how much** based on the current object state and the target shape. It generates multiple push candidates, predicts each candidate with a 1-step rigid-body dynamics model, and evaluates the result against a candidate-specific intermediate target on the reference path. Candidates that the real robot cannot safely approach are then removed before selecting the final action.
 
-> 핵심은 가장 큰 한 번의 push를 찾는 것이 아니라, **실행 가능한 작은 개선을 반복적으로 선택하는 것**이다. 각 push 뒤에는 물체를 다시 관측하고 전체 planning을 새로 수행한다.
+> The goal is not to find the single largest push, but to **repeatedly select small, executable improvements**. After every push, the object is re-observed and the entire planning process is performed again.
 
 ---
 
@@ -30,7 +30,7 @@ Direct / L / U / A* safe approach path attachment
 Approach → push → retreat → re-observe → replan
 ```
 
-관련 문서:
+Related documents:
 
 - Task 1 overview: [`../README.md`](../README.md)
 - Geometry and alignment: [`../geometry/README.md`](../geometry/README.md)
@@ -41,19 +41,19 @@ Approach → push → retreat → re-observe → replan
 
 ## 2. Why a Reference Path Was Needed
 
-최종 목표 pose만 기준으로 후보를 평가하면 현재 한 번의 push로 가능한 이동량과 관계없이 모든 후보가 같은 먼 목표와 비교된다. 이 경우 짧지만 안정적인 후보가 과소평가되고, 긴 후보는 overshoot 위험이 있어도 유리하게 평가될 수 있다.
+If candidates are evaluated only against the final target pose, every candidate is compared with the same distant goal regardless of how far a single push can realistically move the object. This can undervalue short but stable candidates, while long candidates may appear favorable even when they carry a high risk of overshoot.
 
-따라서 현재 pose와 목표 pose 사이에 부드러운 기준 경로를 만들고, 후보의 예상 이동량에 맞는 **중간 목표**를 선택하였다.
+To address this, a smooth reference path was generated between the current and target poses, and an **intermediate target** was selected according to the expected motion of each candidate.
 
 ### 2.1 Minimum-jerk interpolation
 
-물체 pose를 다음과 같이 표현한다.
+The object pose is represented as:
 
 $$
 q=[x,\ y,\ \theta]
 $$
 
-정규화 시간 $t\in[0,1]$에서 보간 함수는 다음과 같다.
+For normalized time $t\in[0,1]$, the interpolation function is:
 
 $$
 s(t)=10t^3-15t^4+6t^5
@@ -63,43 +63,43 @@ $$
 q_{ref}(t)=q_{current}+s(t)(q_{target}-q_{current})
 $$
 
-이 5차 보간은 시작점과 끝점에서 속도와 가속도가 급격하게 변하지 않는 기준을 제공한다. 회전각 차이는 가장 짧은 회전 방향을 사용하도록 $[-\pi,\pi)$ 범위로 wrap한다.
+This fifth-order interpolation provides a reference trajectory whose velocity and acceleration do not change abruptly at the start and end points. The orientation difference is wrapped to the range $[-\pi,\pi)$ so that the shortest rotational direction is used.
 
 <p align="center"><img src="../../images/t1_planning02.png" alt="Reference path examples for circle, square, and T-shape" width="820"/></p>
 
 ### 2.2 Candidate-specific intermediate target
 
-각 후보 $a_j$의 1-step 예측 pose를 $\hat q_{t+1}^{(j)}$라고 하면, 해당 후보와 가장 잘 대응하는 reference point를 선택한다.
+Let the predicted 1-step pose of candidate $a_j$ be $\hat q_{t+1}^{(j)}$. The reference point that best corresponds to that candidate is selected as:
 
 $$
 k_j^*=\arg\min_k d\left(\hat q_{t+1}^{(j)},q_{ref,k}\right)
 $$
 
-즉 모든 후보를 하나의 고정된 중간 목표와 비교하지 않고, **각 후보가 실제로 도달할 수 있는 경로 지점**을 기준으로 평가한다. 이 구조는 후보별 이동량이 다른 상황에서 평가의 공정성과 안정성을 높인다.
+Instead of comparing every candidate with one fixed intermediate target, each candidate is evaluated against the **reference-path point it can realistically reach**. This reduces bias when candidates have different motion magnitudes and makes the evaluation more stable.
 
 ---
 
 ## 3. Push Candidate Generation
 
-Action은 다음 세 요소로 구성된다.
+An action is defined by three elements:
 
 $$
 a=(p_{contact},\ d_{push},\ L_{stroke})
 $$
 
-- `contact`: 물체의 어느 지점을 밀 것인가
-- `direction`: 어느 방향으로 밀 것인가
-- `stroke`: 얼마나 멀리 밀 것인가
+- `contact`: where on the object to push
+- `direction`: in which direction to push
+- `stroke`: how far to push
 
 ### 3.1 Contact points
 
-원형 물체는 둘레를 16개 방향으로 분할하였다. 다각형 물체는 각 변의 10%, 30%, 50%, 70%, 90% 지점에 접촉 후보를 배치하였다.
+For circular objects, the boundary was divided into 16 directions. For polygonal objects, contact candidates were placed at the 10%, 30%, 50%, 70%, and 90% positions along each edge.
 
 <p align="center"><img src="../../images/t1_planning03.png" alt="Contact candidates for circle, square, and T-shape" width="820"/></p>
 
 ### 3.2 Translation and rotation candidates
 
-각 접촉점에서는 기본적으로 세 종류의 방향을 생성하였다.
+At each contact point, three basic push directions were generated.
 
 $$
 d_{normal}=-\hat n
@@ -113,35 +113,35 @@ $$
 d_{spin,right}=-\hat n-\lambda\hat t
 $$
 
-법선 방향 push는 병진 이동을 우선하며, 접선 성분을 더한 후보는 회전 효과를 함께 유도한다.
+The normal-direction candidate primarily encourages translation, while the candidates with tangential components are intended to produce both translation and rotation.
 
 <p align="center"><img src="../../images/t1_planning04.png" alt="Normal and spin push candidates" width="820"/></p>
 
 ### 3.3 Distance-aware stroke
 
-목표와 멀리 떨어진 초기 구간에서는 긴 stroke를 사용하고, 목표에 가까워질수록 짧은 stroke로 전환한다. 최종 조정 단계에서 긴 push를 계속 사용하면 overshoot와 workspace 이탈 가능성이 커지기 때문이다.
+Longer strokes were used when the object was far from the target, and shorter strokes were used as it approached the goal. Continuing to use long pushes during final correction increases the risk of overshoot and workspace exit.
 
-개선된 기준에서는 대략 다음 구간을 사용하였다.
+The improved policy used approximately the following ranges.
 
 | Remaining distance | Stroke policy |
 |---:|---|
-| 5 cm 초과 | Long stroke |
+| More than 5 cm | Long stroke |
 | 1–5 cm | Medium stroke |
-| 1 cm 이하 | Short correction stroke |
+| 1 cm or less | Short correction stroke |
 
 ---
 
 ## 4. One-step Prediction Interface
 
-생성된 모든 후보는 실제로 실행되기 전에 rigid-body dynamics model로 한 번 rollout된다.
+Every generated candidate is rolled out once through the rigid-body dynamics model before execution.
 
 $$
 \hat q_{t+1}^{(j)}=f_{dyn}(q_t,a_j;\phi)
 $$
 
-여기서 $\phi$는 질량, COM, 관성모멘트, 접촉 및 바닥 마찰 등의 parameter를 포함한다. Planning module은 dynamics model이 예측한 다음 pose와 polygon을 받아 후보의 progress와 위험을 평가한다.
+Here, $\phi$ includes parameters such as mass, COM, moment of inertia, contact friction, and ground friction. The planning module receives the predicted next pose and polygon from the dynamics model and uses them to evaluate candidate progress and risk.
 
-이 예측은 정밀한 장기 simulation이 아니라 **동일 상태에서 후보들의 상대 순위를 비교하기 위한 short-horizon predictor**다.
+This prediction is not intended as a precise long-horizon simulation. It is a **short-horizon predictor used to compare the relative ranking of candidates from the same state**.
 
 ---
 
@@ -149,28 +149,28 @@ $$
 
 <p align="center"><img src="../../images/t1_planning05.png" alt="Candidate action scoring examples" width="820"/></p>
 
-후보 평가는 하나의 거리만 최소화하지 않고 다음 항목을 함께 고려한다.
+Candidate evaluation does not minimize a single distance metric. Instead, it considers the following factors together.
 
-1. **Progress**: 기준 경로상의 오차가 실제로 감소했는가
-2. **Direction agreement**: 예측 이동이 목표 방향과 일치하는가
-3. **Overshoot risk**: 후보가 적절한 reference point를 지나치지 않는가
-4. **Workspace margin**: 예측 형상이 경계에 너무 가까워지지 않는가
-5. **Approach cost**: 로봇이 해당 시작점까지 안전하고 짧게 접근할 수 있는가
+1. **Progress**: whether the error along the reference path actually decreases
+2. **Direction agreement**: whether the predicted motion agrees with the target direction
+3. **Overshoot risk**: whether the candidate moves beyond an appropriate reference point
+4. **Workspace margin**: whether the predicted shape becomes too close to the workspace boundary
+5. **Approach cost**: whether the robot can reach the start point safely and with a short path
 
-개념적으로 후보 score는 다음처럼 정리할 수 있다.
+Conceptually, the candidate score can be written as:
 
 $$
 S_j=w_p\Delta E_j+w_dC_{dir,j}
 -w_oP_{over,j}-w_bP_{boundary,j}-w_aC_{approach,j}
 $$
 
-여기서 $\Delta E_j$는 현재 오차와 예측 후 오차의 차이이며, 방향 일치도는 목표 방향 벡터 $g$와 예측 이동 벡터 $m_j$의 cosine similarity로 계산할 수 있다.
+Here, $\Delta E_j$ is the difference between the current error and the predicted error after the push. Direction agreement can be computed using cosine similarity between the target-direction vector $g$ and predicted-motion vector $m_j$.
 
 $$
 C_{dir,j}=\frac{g\cdot m_j}{\|g\|\|m_j\|}
 $$
 
-실제 구현에서는 shape type과 목표까지의 거리에 따라 항목의 중요도가 달라질 수 있으므로, 공개 코드에서는 weight와 threshold를 configuration으로 분리하는 것이 적절하다.
+In practice, the importance of each term can vary with shape type and distance to the target. For a public implementation, the weights and thresholds should therefore be separated into configuration files.
 
 ---
 
@@ -178,7 +178,7 @@ $$
 
 <p align="center"><img src="../../images/t1_planning06.png" alt="Candidate evaluation funnel" width="900"/></p>
 
-모든 후보에 대해 처음부터 A*를 수행하면 planning 시간이 불필요하게 증가한다. 따라서 계산량이 작은 판단을 앞에 두고, 비싼 접근 경로 탐색은 shortlist 이후로 미뤘다.
+Running A* for every candidate from the beginning would add unnecessary planning cost. The system therefore performs inexpensive checks first and postpones expensive approach-path search until after shortlisting.
 
 ```text
 candidate generation
@@ -190,13 +190,13 @@ candidate generation
 → final executable candidate
 ```
 
-이 구조는 “물리적으로 좋아 보이지만 실행할 수 없는 후보”와 “실행은 가능하지만 목표 진척이 낮은 후보”를 단계적으로 분리한다.
+This structure progressively separates candidates that are **physically promising but not executable** from those that are executable but provide little progress toward the goal.
 
 ---
 
 ## 7. Safe Approach Path Planning
 
-물리적으로 가장 좋은 push라도 gripper가 물체와 충돌하지 않고 시작점까지 갈 수 없다면 실행할 수 없다. 접근 경로는 가장 단순한 방법부터 순서대로 검사한다.
+Even if a push is physically favorable, it cannot be executed if the gripper cannot reach the start point without colliding with the object. Approach paths are therefore checked from the simplest method to more complex alternatives.
 
 <p align="center"><img src="../../images/t1_planning07.png" alt="Direct, L, U, and A-star path hierarchy" width="940"/></p>
 
@@ -204,23 +204,23 @@ candidate generation
 
 | Priority | Path type | Purpose |
 |---:|---|---|
-| 1 | Direct | 가장 짧고 빠른 직선 접근 |
-| 2 | L-shape | 한 번 꺾어 장애물 회피 |
-| 3 | U-shape | 물체 bounding box 바깥을 크게 우회 |
-| 4 | Short A* | 앞의 기하 경로가 모두 실패했을 때 격자 탐색 |
+| 1 | Direct | shortest and fastest straight-line approach |
+| 2 | L-shape | avoid the obstacle with one turn |
+| 3 | U-shape | make a larger detour around the object bounding box |
+| 4 | Short A* | grid-based search when all geometric paths fail |
 
-A*의 기본 평가식은 다음과 같다.
+The basic A* evaluation function is:
 
 $$
 f(n)=g(n)+h(n)
 $$
 
-- $g(n)$: 시작점에서 현재 node까지의 실제 이동 비용
-- $h(n)$: 현재 node에서 목표까지의 추정 비용
+- $g(n)$: actual movement cost from the start point to the current node
+- $h(n)$: estimated cost from the current node to the goal
 
 ### 7.2 Progressive waypoint limits
 
-A* 경로를 5개 waypoint로 고정 제한하면 실행 시간은 줄지만, 6개 이상의 충분히 실행 가능한 경로까지 버리는 문제가 발생했다. 이를 해결하기 위해 제한을 점진적으로 완화하였다.
+Limiting every A* path to exactly 5 waypoints reduced execution time, but it also rejected feasible paths that required 6 or more waypoints. To avoid this, the waypoint limit was relaxed progressively.
 
 ```python
 for max_waypoints in [5, 7, 9, 12]:
@@ -231,14 +231,14 @@ for max_waypoints in [5, 7, 9, 12]:
 
 <p align="center"><img src="../../images/t1_planning08.png" alt="Progressive A-star waypoint relaxation and path simplification" width="780"/></p>
 
-짧은 경로가 가능하면 5개 제한에서 즉시 종료하고, 모든 짧은 경로가 실패했을 때만 더 긴 우회를 허용한다. 생성된 경로는 중간 waypoint를 건너뛰어도 충돌하지 않는지 검사하여 shortcut simplification을 수행한다.
+If a short path is available, the search stops immediately at the 5-waypoint limit. Longer detours are allowed only when all shorter alternatives fail. The generated path is then simplified by checking whether intermediate waypoints can be skipped without collision.
 
 ### 7.3 Start state near the safety margin
 
-Push 이후 gripper가 물체 가까이에 남아 있으면 다음 planning에서 시작점이 inflated obstacle 내부로 판정되어 `no plan`이 발생할 수 있다.
+After a push, the gripper may remain close to the object. In the next planning cycle, the start point can then be classified as being inside the inflated obstacle, causing a `no plan` result.
 
-- 시작점이 **실제 object polygon 내부**이면 위험하므로 허용하지 않는다.
-- 실제 물체 내부는 아니고 safety margin에만 걸린 경우에는, 먼저 물체 바깥의 안전 위치로 빠져나온 뒤 일반 경로 계획을 수행할 수 있다.
+- If the start point is **inside the actual object polygon**, it is considered unsafe and is not allowed.
+- If it is outside the real object but only overlaps the safety margin, the robot can first move to a safe location outside the inflated region before normal path planning begins.
 
 <p align="center"><img src="../../images/t1_planning09.png" alt="Task 1 planning geometry in workspace" width="620"/></p>
 
@@ -246,30 +246,30 @@ Push 이후 gripper가 물체 가까이에 남아 있으면 다음 planning에�
 
 ## 8. Execution Plan and Closed-loop Replanning
 
-선택된 plan은 다음 순서로 실행된다.
+The selected plan is executed in the following order.
 
 | Stage | Description |
 |---|---|
-| Approach | 경유점을 따라 push start 근처까지 이동 |
-| Align | 정확한 시작점과 방향으로 정렬 |
-| Push | 선택된 stroke만큼 물체를 밀기 |
-| Retreat | 다음 planning을 위해 물체에서 후퇴 |
-| Re-observe | 실제 pose와 robot state를 다시 측정 |
-| Replan | 새로운 state에서 후보를 다시 생성·평가 |
+| Approach | move near the push start point through the planned waypoints |
+| Align | align with the exact start point and push direction |
+| Push | move the object by the selected stroke length |
+| Retreat | move away from the object before the next planning cycle |
+| Re-observe | measure the actual object pose and robot state again |
+| Replan | regenerate and evaluate candidates from the new state |
 
 <p align="center"><img src="../../images/t1_planning10.png" alt="Planned push and observed result" width="940"/></p>
 
-Push 이후에는 예측 pose와 실제 observed pose를 비교하고, 관측된 병진·회전 결과를 다음 planning과 COM belief update에 반영한다. 따라서 하나의 잘못된 1-step prediction이 이후 모든 action을 결정하지 않는다.
+After each push, the predicted pose is compared with the actual observed pose. The measured translation and rotation response can then be used in the next planning cycle and COM belief update. As a result, a single inaccurate 1-step prediction does not determine all subsequent actions.
 
 ---
 
 ## 9. Execution-time Optimization
 
-실제 원격 로봇에서는 계산 시간뿐 아니라 waypoint마다 반복되는 대기 시간이 전체 성능을 크게 제한했다.
+In the remote robot environment, overall performance was limited not only by computation time but also by repeated waiting time at each waypoint.
 
 <p align="center"><img src="../../images/t1_planning11.png" alt="Approach path sleep-time optimization" width="850"/></p>
 
-기존과 개선 후 sleep 모델은 다음과 같았다.
+The original and improved sleep-time models were:
 
 $$
 T_{wait,old}=0.2N+2.0
@@ -279,21 +279,21 @@ $$
 T_{wait,new}=0.05N+0.4
 $$
 
-5개 waypoint 경로의 경우 대기 시간이 약 `3.00 s → 0.65 s`로 감소하였다. 또한 A* 이전에 U-shape를 추가하고 waypoint 수를 제한함으로써, 복잡한 경로가 무조건 긴 실행 시간으로 이어지는 문제를 완화했다.
+For a 5-waypoint path, the waiting time was reduced from approximately `3.00 s → 0.65 s`. Adding U-shaped paths before A* and limiting the number of waypoints also reduced cases where a complex path automatically resulted in a long execution time.
 
 ---
 
 ## 10. Development Validation
 
-Planning과 execution 개선이 함께 적용된 사각형 실제 로봇 테스트 11회에서 모든 run이 최종 IoU `0.8` 이상을 기록하였다. 이 결과는 candidate scoring이나 A* 개선 하나만을 분리한 ablation이 아니라, geometry correction, execution timing과 closed-loop replanning이 함께 적용된 통합 결과다.
+Across 11 real-robot square tests after the planning and execution improvements were integrated, every run achieved a final IoU of at least `0.8`. This was not an isolated ablation of candidate scoring or A* alone; the results include geometry correction, execution-timing improvements, and closed-loop replanning.
 
 <p align="center"><img src="../../images/t1_planning12.png" alt="Task 1 square validation metrics" width="760"/></p>
 
-최종 대회에서 K-DAS는 Task 1 score `49.69`로 1위를 기록했다. Planning 관점에서 핵심 기여는 다음 세 가지였다.
+In the final competition, K-DAS achieved a Task 1 score of `49.69`, ranking 1st. From the planning perspective, the main contributions were:
 
-- 후보별로 물리 예측과 기준 경로 progress를 평가
-- 실제 실행 가능한 접근 경로를 후보 선택에 포함
-- 매 push 이후 관찰과 replanning으로 모델 오차를 보정
+- evaluating candidate-specific physics predictions and reference-path progress
+- including executable approach paths in candidate selection
+- correcting model error through observation and replanning after every push
 
 ---
 
@@ -301,19 +301,19 @@ Planning과 execution 개선이 함께 적용된 사각형 실제 로봇 테스�
 
 ### 11.1 Overshoot and workspace exit
 
-긴 stroke는 빠른 이동에는 유리하지만, 목표 근처 또는 workspace 경계에서 위험하다. 거리 기반 stroke와 boundary margin이 필요하다.
+Long strokes are useful for fast motion, but they become risky near the target or workspace boundary. Distance-aware stroke selection and boundary margins are therefore required.
 
 ### 11.2 No-plan after retreat
 
-후퇴 거리가 너무 짧거나 mapping error가 존재하면 planner는 gripper와 object가 겹친 것으로 판단할 수 있다. Retreat parameter만 키우는 것은 임시 완화이며, 근본적으로는 observation–mapping 정합성이 중요하다.
+If the retreat distance is too short or mapping error remains, the planner may interpret the gripper and object as overlapping. Increasing the retreat distance can reduce the issue temporarily, but the underlying requirement is consistent observation-to-mapping alignment.
 
 ### 11.3 One-step horizon
 
-현재 구조는 long-horizon push sequence를 한 번에 최적화하지 않는다. 대신 short-horizon candidate selection과 closed-loop replanning을 사용한다.
+The current system does not optimize an entire long-horizon push sequence at once. Instead, it uses short-horizon candidate selection with closed-loop replanning.
 
 ### 11.4 Discrete action density
 
-접촉점, 방향과 stroke가 이산 후보이므로 continuous optimum을 보장하지 않는다. 후보 수를 늘리면 품질은 좋아질 수 있지만 dynamics rollout과 path attachment 비용도 증가한다.
+Because contact point, direction, and stroke are sampled as discrete candidates, the planner does not guarantee a continuous optimum. Increasing candidate density may improve solution quality, but it also increases the cost of dynamics rollout and path attachment.
 
 ---
 
@@ -337,23 +337,23 @@ planning/
 │  └─ test_approach_path.py
 ```
 
-공개 시 다음 설정을 코드 내부 상수와 분리해 기록해야 한다.
+For public release, the following settings should be separated from hard-coded constants.
 
 - contact sampling density
 - spin tangent ratio $\lambda$
-- distance별 stroke bin
-- score weight와 penalty threshold
+- distance-based stroke bins
+- score weights and penalty thresholds
 - obstacle inflation / workspace margin
-- A* grid resolution과 waypoint limits
-- retreat distance와 execution sleep
+- A* grid resolution and waypoint limits
+- retreat distance and execution sleep
 
 ---
 
 
-> 모든 시각 자료는 repository 최상위 `images/` 폴더에서 공통 관리한다.
+> All visual materials are managed in the repository-level `images/` directory.
 
 ## 13. Takeaway
 
-K-DAS의 Task 1 planner는 단순히 목표를 향해 가장 가까운 면을 미는 rule-based controller가 아니다. **기준 경로, candidate-wise 1-step physics prediction, multi-objective scoring, safe approach path와 closed-loop replanning**을 연결한 model-based manipulation planner다.
+The K-DAS Task 1 planner is not a rule-based controller that simply pushes the nearest face toward the target. It is a **model-based manipulation planner that combines a reference path, candidate-wise 1-step physics prediction, multi-objective scoring, safe approach planning, and closed-loop replanning**.
 
-> 좋은 push는 물체를 목표 방향으로 움직이는 것뿐 아니라, 로봇이 안전하게 실행할 수 있고 다음 step의 planning을 방해하지 않아야 한다.
+> A good push must not only move the object toward the target. It must also be safely executable by the robot and leave the system in a state that supports the next planning step.
