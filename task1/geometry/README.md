@@ -299,9 +299,7 @@ for shift in range(4):
 | Average total time | **97.65 s** |
 | Average time per step | **24.41 s** |
 
-<p align="center">
-  <img src="../../images/t1_geometry13.png" alt="Square validation metrics across 11 runs" width="900"/>
-</p>
+
 
 10차와 11차 run에서는 최종 IoU 0.90을 기록했으며, 11차는 2 step, 46.01초 만에 성공 기준을 만족했다. 이 결과는 square geometry normalization이 전체 planner와 결합되었을 때 반복적인 불필요 회전을 줄이고 목표 근처 정렬을 안정화했음을 보여준다.
 
