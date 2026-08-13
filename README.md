@@ -124,6 +124,12 @@ K-DAS therefore decomposed the system into mapping, geometry, dynamics, planning
 
 The object center and vertices in Task 1, and the 20 rope nodes in Task 2, are first observed as camera pixel coordinates `(u, v)`. CloudGripper commands, however, use normalized workspace coordinates `(x, y)`. A reliable pixel-to-workspace conversion was therefore required before perception results could be used for planning and control.
 
+<p align="center">
+  <img src="images/root04_updated_v3.png"
+       alt="Robot-specific mapping, automatic robot matching, runtime coordinate conversion, and extended state representation"
+       width="1000"/>
+</p>
+
 During the testing period, we generated a separate map for each robot by moving the gripper over a **33 × 33 workspace grid** and recording the correspondence between the commanded `(x, y)` position and the observed gripper center `(u, v)`. HSV-based detection was initially used, but its instability under lighting and reflections led us to replace it with **YOLOv8-based gripper detection**.
 
 The final mapping pipeline consisted of:
@@ -144,6 +150,7 @@ Full documentation: [`mapping/README.md`](mapping/README.md)
 
 
 ---
+
 
 ## 5. [Task 1](task1/README.md) — Predict Before Pushing
 
