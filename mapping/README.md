@@ -283,7 +283,7 @@ Train region의 크기를 세 단계로 변경하여, Homography를 계산할 �
 
 <p align="center"><b>Small train region (margin = 0.44)</b></p>
 <p align="center">
-  <img src="../images/homography_validation_small.png"
+  <img src="../images/map11.png"
        alt="Homography validation with small train region"
        width="980"/>
 </p>
@@ -292,7 +292,7 @@ Train 영역이 작을 경우에는 Homography를 계산하는 데 사용되는 
 
 <p align="center"><b>Medium train region (margin = 0.24)</b></p>
 <p align="center">
-  <img src="../images/homography_validation_medium.png"
+  <img src="../images/map12.png"
        alt="Homography validation with medium train region"
        width="980"/>
 </p>
@@ -325,7 +325,7 @@ Maximum error
 
 <p align="center"><b>Large train region (margin = 0.08)</b></p>
 <p align="center">
-  <img src="../images/homography_validation_large.png"
+  <img src="../images/map13.png"
        alt="Homography validation with large train region"
        width="980"/>
 </p>
