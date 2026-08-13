@@ -118,30 +118,30 @@ K-DAS therefore decomposed the system into mapping, geometry, dynamics, planning
 
 ---
 
-## 4. [Shared Mapping](mapping/README.md) — Before Control, We Needed a Common Language
+## 4. [Shared Mapping](mapping/README.md) — Before Control, We Needed Reliable Coordinates
 
-> **“Can we tell the robot exactly where a point observed in the image exists in the workspace?”**
+> **“Can we tell the robot where a point observed in the camera actually lies in its workspace?”**
 
-The object center and vertices in Task 1, and the 20 rope nodes in Task 2, all originate in camera pixels. Robot commands, however, operate in workspace coordinates. Without a reliable connection between the two, even a strong dynamics model or planner cannot produce executable robot actions.
+The object center and vertices in Task 1, and the 20 rope nodes in Task 2, are first observed as camera pixel coordinates `(u, v)`. CloudGripper commands, however, use normalized workspace coordinates `(x, y)`. A reliable pixel-to-workspace conversion was therefore required before perception results could be used for planning and control.
 
-<p align="center">
-  <img src="images/root04.png" alt="Robot-specific mapping workflow" width="1000"/>
-</p>
+During the testing period, we generated a separate map for each robot by moving the gripper over a **33 × 33 workspace grid** and recording the correspondence between the commanded `(x, y)` position and the observed gripper center `(u, v)`. HSV-based detection was initially used, but its instability under lighting and reflections led us to replace it with **YOLOv8-based gripper detection**.
 
-Initially, the gripper center was detected using HSV-based processing, but the estimate was unstable under lighting and color-distribution changes, reducing calibration quality. We therefore switched to **YOLOv8 segmentation** for gripper-mask detection and recollected pixel-to-workspace correspondences by moving the robot arm across the full workspace.
+The final mapping pipeline consisted of:
 
-The final mapping module was more than a nearest-neighbor lookup.
+- robot-specific **33 × 33 pixel–workspace maps**
+- YOLOv8-based gripper-center detection
+- multiple-frame measurements and median aggregation
+- **Clough–Tocher 2D interpolation** for continuous pixel-to-workspace conversion
+- **automatic robot-map matching** from the first camera observation at competition startup
+- off-grid validation at positions not used for calibration
+- **Homography-based extended coordinates** for object corners or rope nodes outside the measured workspace
 
-- robot-specific camera intrinsics and distortion correction
-- **33 × 33 calibration grid**
-- multiple-frame detection and median aggregation at each point
-- **Clough–Tocher 2D interpolation** in the form `x = f_x(u,v)`, `y = f_y(u,v)`
-- separate validation at off-grid positions not used for calibration
-- robot-specific LUTs and valid workspace ranges
+At competition time, the assigned robot ID was unknown. Instead of performing a new calibration, the system detected the gripper in the first camera frame, selected the best-matching pre-generated robot map, and immediately used it for runtime coordinate conversion.
 
-This module provided the shared coordinate language used by both Task 1 and Task 2. Instead of applying deep regression by default, we selected an interpolation-based method that kept perception and mapping error interpretable and avoided risky extrapolation outside the calibrated region.
+For robot control, coordinates were restricted to the measured and reachable workspace. Homography was used separately to represent object or rope states that extended beyond this region.
 
 Full documentation: [`mapping/README.md`](mapping/README.md)
+
 
 ---
 
