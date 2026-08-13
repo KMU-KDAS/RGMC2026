@@ -6,9 +6,9 @@
 
 **Task 1 · Model-Based Closed-Loop Planar Pushing · Team K-DAS**
 
-이 모듈은 Planning이 선택한 push action과 approach path를 실제 CloudGripper에서 실행하고, **관측 실패·접근 불가능·통신 지연·불충분한 후퇴·예측 오차**를 처리한다. Task 1은 한 번의 계획을 끝까지 수행하는 open-loop system이 아니라, 한 번 밀고 실제 상태를 다시 확인한 뒤 다음 plan을 만드는 closed-loop runtime으로 구성된다.
+This module executes the push action and approach path selected by Planning on the actual CloudGripper system, while handling **observation failures, unreachable approaches, communication latency, insufficient retreat, and prediction error**. Task 1 is not an open-loop system that executes one plan from start to finish. Instead, it uses a closed-loop runtime that performs one push, checks the actual state again, and then generates the next plan.
 
-> Planning은 “무엇을 실행할 것인가”를 결정하고, Runtime은 “그 계획을 실제 로봇에서 안전하고 반복 가능하게 수행할 수 있는가”를 책임진다.
+> Planning determines **what should be executed**, while Runtime is responsible for **whether that plan can be carried out safely and repeatedly on the real robot**.
 
 ---
 
@@ -16,11 +16,11 @@
 
 | Layer | Main responsibility |
 |---|---|
-| Perception / Geometry | 물체와 gripper의 상태, polygon, pose, IoU 추정 |
-| Planning | contact, direction, stroke와 안전 접근 경로 선택 |
-| Dynamics | candidate별 1-step 결과 예측 |
-| **Runtime** | approach, push, retreat, 재관찰, 지연·실패 복구 |
-| Mapping | camera pixel과 robot workspace의 좌표 변환 |
+| Perception / Geometry | estimate object and gripper state, polygon, pose, and IoU |
+| Planning | select contact, direction, stroke, and a safe approach path |
+| Dynamics | predict the 1-step outcome of each candidate |
+| **Runtime** | execute approach, push, retreat, re-observation, and latency/failure recovery |
+| Mapping | transform camera pixel coordinates into robot workspace coordinates |
 
 ```text
 Selected plan
@@ -34,7 +34,7 @@ Selected plan
     → next planning step
 ```
 
-관련 문서:
+Related documents:
 
 - Task 1 overview: [`../README.md`](../README.md)
 - Planning: [`../planning/README.md`](../planning/README.md)
@@ -45,35 +45,35 @@ Selected plan
 
 ## 2. From Single-step Validation to a Closed Loop
 
-초기 로봇 이식 단계에서는 전체 loop를 바로 실행하지 않고, 한 번의 push가 올바르게 계획되고 수행되는지부터 확인했다.
+During the initial robot deployment stage, the full loop was not executed immediately. We first verified whether a single push could be planned and executed correctly.
 
 - `task1_one_step_push_eval.ipynb`: Mapping → Perception → Planning → one push
-- `task1_loop.ipynb`: push 이후 재관찰하고 성공 조건까지 반복
+- `task1_loop.ipynb`: re-observe after each push and repeat until the success condition is reached
 
 <p align="center">
   <img src="../../images/t1_runtime02.png" alt="Processed object state before and after one push" width="820"/>
 </p>
 
-단일 step 검증이 완료된 뒤, runtime은 다음 상태 기계로 확장되었다.
+After single-step validation was completed, the runtime was extended into the following state machine.
 
 <p align="center">
   <img src="../../images/t1_runtime03.png" alt="Closed-loop runtime state machine" width="940"/>
 </p>
 
-핵심은 모델이 예측한 다음 상태를 그대로 다음 step의 초기값으로 사용하지 않는 것이다. Push 이후 실제 영상과 robot state를 다시 읽어, 관측된 상태에서 planner를 새로 실행한다.
+The key point is that the model-predicted next state is not directly used as the initial state of the next step. After each push, the system reads the actual image and robot state again and reruns the planner from the observed state.
 
 ---
 
 ## 3. Approach, Push, and Retreat Execution
 
-Runtime은 planner가 전달한 waypoint와 push segment를 다음 순서로 실행한다.
+The runtime executes the waypoints and push segment provided by the planner in the following order.
 
-1. 안전 높이에서 approach waypoint를 순차적으로 이동한다.
-2. 최종 push start에 맞춰 gripper를 정렬한다.
-3. 계획된 end point까지 push를 수행한다.
-4. 물체에서 반대 방향으로 후퇴한다.
-5. 다음 관측을 방해하지 않는 위치에서 안정화한다.
-6. 새 이미지를 받아 다음 step을 시작한다.
+1. Move through the approach waypoints sequentially at a safe height.
+2. Align the gripper with the exact push start position.
+3. Execute the push to the planned end point.
+4. Retreat in the opposite direction away from the object.
+5. Stabilize at a position that does not interfere with the next observation.
+6. Acquire a new image and begin the next step.
 
 <p align="center">
   <img src="../../images/t1_runtime04.png" alt="CloudGripper executor output for approach push and retreat" width="700"/>
@@ -92,13 +92,13 @@ robot.move_xy(*retreat_point)
 wait(RETREAT_SLEEP_TIME)
 ```
 
-실제 공개 코드에서는 waypoint 이동 완료 여부를 robot state로 확인하고, 고정 sleep은 최소한의 안정화 용도로만 사용하도록 분리하는 것이 적절하다.
+In a public implementation, it would be preferable to verify waypoint completion through robot state feedback and use fixed sleep only for minimal stabilization.
 
 ---
 
 ## 4. No-plan After Push
 
-실제 로봇 검증에서 첫 번째 push는 성공했지만 다음 step에서 planner가 `NO PLAN`을 반환하는 문제가 발생했다. 수동으로 gripper를 뒤로 이동한 뒤 다시 실행하면 plan이 생성되었기 때문에, 실행 후 gripper 위치가 주요 원인으로 확인되었다.
+During real-robot validation, the first push succeeded, but the planner returned `NO PLAN` on the next step. When the gripper was manually moved backward and the same process was run again, a valid plan was generated. This indicated that the gripper position after execution was a major cause of the failure.
 
 <p align="center">
   <img src="../../images/t1_runtime05.png" alt="No-plan diagnosis and recovery" width="920"/>
@@ -106,36 +106,36 @@ wait(RETREAT_SLEEP_TIME)
 
 ### 4.1 Retreat distance was too short
 
-Push 이후 후퇴 거리가 작으면 다음 관측에서 gripper와 물체가 지나치게 가까운 상태로 남는다. Planner는 이를 충돌 또는 이동 가능 공간 부족으로 판단해 모든 접근 경로를 거부할 수 있다.
+If the retreat distance is too small, the gripper remains too close to the object in the next observation. The planner may interpret this as a collision or as insufficient free space for motion and reject all approach paths.
 
-단기적으로는 retreat distance를 증가시켜 다음 step의 planning 공간을 확보했다.
+As a short-term fix, the retreat distance was increased to provide more planning space for the next step.
 
 ### 4.2 Perception and mapping uncertainty
 
-실제로는 떨어져 있어도 pixel-to-workspace 변환 오차 때문에 두 객체가 겹쳐 보일 수 있었다. 따라서 다음을 구분해야 한다.
+Even when the gripper and object are physically separated, pixel-to-workspace mapping error can make them appear to overlap. The runtime and planner therefore need to distinguish between the following cases.
 
-- 실제 물체 polygon 내부 침투: 거부
-- 접근 경로가 물체를 통과함: 거부
-- 최종 contact point가 inflated safety margin에만 위치함: 제한적으로 허용
-- gripper가 margin 안에서 시작함: 먼저 안전 방향으로 탈출한 뒤 일반 planning 수행
+- penetration into the actual object polygon: reject
+- approach path passing through the object: reject
+- final contact point lying only inside the inflated safety margin: allow with constraints
+- gripper starting inside the safety margin: first move outward to a safe position, then perform normal path planning
 
 <p align="center">
   <img src="../../images/t1_runtime06.png" alt="Task 1 planning geometry in the robot workspace" width="620"/>
 </p>
 
-Retreat parameter 조정은 현상을 완화하는 runtime 대응이며, 근본적으로는 Mapping 정합과 정확한 object/gripper geometry가 필요하다.
+Adjusting the retreat parameter reduces the symptom at runtime, but the underlying requirement is consistent Mapping and accurate object/gripper geometry.
 
 ---
 
 ## 5. Observation Validation and Recovery
 
-실제 영상은 항상 유효하지 않다. Gripper가 contour를 가리거나, segmentation이 순간적으로 실패하거나, remote image request가 지연될 수 있다. 잘못된 관측을 바로 planner에 넣으면 위험한 action이 생성될 수 있으므로 다음 조건을 확인한다.
+Real observations are not always valid. The gripper can occlude the contour, segmentation can fail temporarily, or a remote image request can be delayed. Passing an invalid observation directly to the planner can produce unsafe actions, so the runtime checks the following conditions.
 
-- object와 gripper detection이 모두 존재하는가
-- polygon area와 center가 workspace 범위에 있는가
-- 이전 frame 대비 이동량이 물리적으로 가능한가
-- pose와 keypoint 순서가 유효한가
-- robot state와 visual gripper 위치가 크게 충돌하지 않는가
+- both object and gripper detections are available
+- polygon area and center are within the workspace bounds
+- motion relative to the previous frame is physically plausible
+- pose and keypoint ordering are valid
+- robot state and visual gripper position do not strongly conflict
 
 ```text
 valid observation
@@ -148,23 +148,23 @@ invalid observation
     → abort/reset only after repeated failure
 ```
 
-Runtime의 복구 원칙은 **불확실한 상태에서 새로운 push를 실행하지 않는 것**이다.
+The recovery principle is to **avoid executing a new push when the current state is uncertain**.
 
 ---
 
 ## 6. Execution-time Bottleneck Analysis
 
-중간평가에서는 시뮬레이션과 로컬 테스트에서 예상한 것보다 한 step이 훨씬 오래 걸렸다. 실제 평가 시간에는 다음 항목이 모두 포함되었다.
+During intermediate evaluation, a single step took much longer than expected from simulation and local testing. The actual evaluation time included all of the following.
 
-- 해외 평가 서버 응답
-- camera image 획득
+- response time from the overseas evaluation server
+- camera image acquisition
 - robot state query
-- evaluator 호출
+- evaluator calls
 - network latency
-- 실제 waypoint 이동
-- 코드 내부의 고정 sleep
+- physical waypoint motion
+- fixed sleep inside the code
 
-초기 테스트에서는 목표까지 약 10 step이 필요했지만, 실제 환경에서는 한 step이 길어 3~4회 push만 수행한 상태로 시간이 종료되는 경우가 있었다.
+Early tests required roughly 10 steps to reach the goal, but in the real environment each step was long enough that the run sometimes ended after only 3–4 pushes.
 
 ### 6.1 Fixed waiting-time reduction
 
@@ -179,7 +179,7 @@ Runtime의 복구 원칙은 **불확실한 상태에서 새로운 push를 실행
 | After push | 1.00 s | 0.10 s |
 | After retreat | 0.50 s | 0.15 s |
 
-기존과 개선 후 고정 대기시간은 다음과 같다.
+The original and improved fixed waiting-time models were:
 
 $$
 T_{wait,old}=0.2N+2.0
@@ -189,34 +189,34 @@ $$
 T_{wait,new}=0.05N+0.4
 $$
 
-5-waypoint 경로에서는 sleep만 약 `3.00 s`에서 `0.65 s`로 감소했다.
+For a 5-waypoint path, sleep time alone was reduced from approximately `3.00 s` to `0.65 s`.
 
 ### 6.2 Path-length control
 
-긴 A* 경로에서는 20개 또는 31개의 waypoint가 생성되어, 계산시간보다 실제 waypoint 실행시간이 더 큰 병목이 되었다. 이를 줄이기 위해 다음을 적용했다.
+Long A* paths sometimes produced 20 or 31 waypoints, making physical waypoint execution a larger bottleneck than planning computation itself. The following changes were applied.
 
-- Direct → L-shape → U-shape → Short A* 우선순위
-- A* waypoint limit
-- `5 → 7 → 9 → 12`의 점진적 완화
-- collision-free shortcutting으로 불필요한 중간점 제거
+- Direct → L-shape → U-shape → Short A* priority
+- A* waypoint limits
+- progressive relaxation of `5 → 7 → 9 → 12`
+- removal of unnecessary intermediate waypoints through collision-free shortcutting
 
 ---
 
 ## 7. Measured Real-robot Runtime
 
-개선 이후 실제 terminal 시간을 기준으로 10회 테스트, 총 43개 push step을 측정했다.
+After the improvements, runtime was measured over 10 tests and 43 total push steps using actual terminal timestamps.
 
 <p align="center">
   <img src="../../images/t1_runtime08.png" alt="Measured real robot time per push step" width="860"/>
 </p>
 
-- 전체 평균: `28.02 s / step`
-- Evaluation server + vision + robot state: `17.83 s`, 전체의 `63.64%`
-- Planning: `2.78 s`, 전체의 `9.93%`
-- Robot motion: `5.94 s`, 전체의 `21.21%`
-- 통제 가능한 planning·motion·wait·debug 구간: 평균 약 `10.18 s / step`
+- Overall average: `28.02 s / step`
+- Evaluation server + vision + robot state: `17.83 s`, or `63.64%` of the total
+- Planning: `2.78 s`, or `9.93%`
+- Robot motion: `5.94 s`, or `21.21%`
+- Controllable planning, motion, wait, and debug section: approximately `10.18 s / step` on average
 
-이 분석은 planner 계산만 미세하게 최적화하는 것보다, remote I/O 대기와 불필요한 로봇 정지 시간을 구분해 개선해야 한다는 점을 보여주었다. 제한시간 180초에서는 대략 6회의 push를 수행할 수 있는 실행 여유를 확보하는 것을 목표로 했다.
+This analysis showed that improving only planner computation time would have limited impact. Remote I/O latency and unnecessary robot idle time had to be separated and optimized independently. Under the 180-second time limit, the runtime was designed to leave enough execution budget for approximately six pushes.
 
 ---
 
@@ -226,21 +226,21 @@ $$
   <img src="../../images/t1_runtime09.png" alt="Runtime logging schema" width="920"/>
 </p>
 
-각 push마다 다음 정보를 함께 저장한다.
+For each push, the following information is stored together.
 
-- 실행 전 pose, polygon, IoU
-- 선택된 contact, push direction, stroke
-- approach path type과 waypoint 수
-- physics model이 예측한 next pose
-- 실행 후 실제로 관측된 next pose
+- pose, polygon, and IoU before execution
+- selected contact, push direction, and stroke
+- approach path type and waypoint count
+- next pose predicted by the physics model
+- next pose actually observed after execution
 - prediction residual
-- 각 단계의 latency와 failure reason
+- latency and failure reason for each stage
 
 $$
 r_t=q_{t+1}^{observed}-\hat q_{t+1}^{physics}
 $$
 
-이 로그는 즉시 다음 planning을 실제 관측 상태로 초기화하는 데 사용되며, COM belief 갱신과 이후 residual-correction 실험의 데이터가 된다. 물리 모델을 완전히 신뢰하거나 폐기하는 대신, **예측은 action ranking에 사용하고 실제 결과는 다음 step과 모델 진단에 사용**한다.
+These logs are used to initialize the next planning step from the actual observed state, update the COM belief, and provide data for later residual-correction experiments. Rather than fully trusting or discarding the physics model, the system uses **prediction for action ranking and actual outcomes for the next step and model diagnostics**.
 
 ---
 
@@ -250,13 +250,13 @@ $$
   <img src="../../images/t1_runtime10.png" alt="Real robot runtime visualization for a circle object" width="640"/>
 </p>
 
-Runtime, geometry correction, planning과 timing optimization이 함께 적용된 사각형 개발 테스트 11회에서는 모든 run이 최종 IoU `0.8` 이상을 기록했다. 이는 runtime 하나의 단독 ablation이 아니라 통합 system configuration의 결과다.
+Across 11 square development tests with runtime handling, geometry correction, planning, and timing optimization integrated together, every run achieved a final IoU of at least `0.8`. This was not an isolated runtime ablation, but a result of the integrated system configuration.
 
 <p align="center">
   <img src="../../images/t1_runtime11.png" alt="Square object development validation" width="760"/>
 </p>
 
-최종 대회에서 K-DAS는 Task 1 score `49.69`로 1위를 기록했다.
+In the final competition, K-DAS achieved a Task 1 score of `49.69`, ranking 1st.
 
 <p align="center">
   <img src="../../images/t1_runtime12.png" alt="Task 1 final ranking" width="720"/>
@@ -276,17 +276,17 @@ Runtime, geometry correction, planning과 timing optimization이 함께 적용�
 | Evaluator or server latency | preserve state, avoid duplicate command, continue after response |
 | Repeated invalid observations | abort current run or controlled reset |
 
-복구 로직은 무조건 동작을 계속하기 위한 것이 아니라, **불확실한 상태에서 잘못된 push를 방지하기 위한 fail-safe layer**다.
+The recovery logic is not intended to keep the robot moving at all costs. It acts as a **fail-safe layer that prevents incorrect pushes when the current state is uncertain**.
 
 ---
 
 ## 11. Limitations
 
-- 고정 sleep을 줄였지만 command completion을 완전히 event-driven으로 처리한 것은 아니다.
-- Mapping error가 큰 경우 retreat distance만으로 no-plan을 근본적으로 해결할 수 없다.
-- Remote server latency는 local runtime에서 직접 줄일 수 없다.
-- Runtime logging은 원인 분석에 유용하지만, 각 개선의 독립적인 기여도를 보여주는 ablation은 제한적이다.
-- Surprise shape에서는 contour와 contact geometry가 달라질 수 있으므로 observation validity와 approach margin을 보수적으로 설정해야 한다.
+- Fixed sleep was reduced, but command completion was not handled through a fully event-driven mechanism.
+- If Mapping error is large, increasing retreat distance alone cannot fundamentally resolve no-plan failures.
+- Remote server latency cannot be directly reduced by the local runtime.
+- Runtime logging is useful for diagnosing failures, but isolated ablations for the contribution of each improvement are limited.
+- For surprise shapes, contour and contact geometry can differ significantly, so observation-validity checks and approach margins need to remain conservative.
 
 ---
 
@@ -309,12 +309,12 @@ runtime/
    └─ test_timing_budget.py
 ```
 
-Robot token, private evaluation URL, robot-specific calibration과 absolute path는 공개 configuration에서 제거해야 한다.
+Robot tokens, private evaluation URLs, robot-specific calibration values, and absolute paths should be removed from the public configuration.
 
 ---
 
 ## 13. Takeaway
 
-K-DAS의 Task 1 Runtime은 planner의 출력을 단순히 API 명령으로 변환하는 코드가 아니다. **Approach–push–retreat를 실제 로봇에서 실행하고, 관측 실패와 no-plan을 복구하며, 원격 지연을 분석하고, 매 step 실제 결과로 planning loop를 다시 닫는 실행 계층**이다.
+The K-DAS Task 1 Runtime is not simply a layer that converts planner outputs into API commands. It is the **execution layer that performs approach–push–retreat on the real robot, recovers from observation failures and no-plan conditions, analyzes remote latency, and closes the planning loop again using the actual result at every step**.
 
-> Task 1의 실제 안정성은 물리 모델의 정확도만으로 확보된 것이 아니라, 짧은 예측과 실제 재관찰을 반복하고 실패 시 무리하게 다음 action을 실행하지 않는 runtime 구조에서 완성되었다.
+> Task 1 reliability was not achieved through physics-model accuracy alone. It was completed by repeatedly combining short-horizon prediction with real re-observation and by avoiding forced execution when the runtime state was uncertain.
