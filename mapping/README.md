@@ -285,7 +285,7 @@ Train region의 크기를 세 단계로 변경하여, Homography를 계산할 �
 
 <p align="center"><b>Small train region (margin = 0.44)</b></p>
 <p align="center">
-  <img src="../map11.png"
+  <img src="../images/map11.png"
        alt="Homography validation with small train region"
        width="980"/>
 </p>
