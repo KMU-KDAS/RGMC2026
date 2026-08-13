@@ -125,7 +125,7 @@ K-DAS therefore decomposed the system into mapping, geometry, dynamics, planning
 The object center and vertices in Task 1, and the 20 rope nodes in Task 2, are first observed as camera pixel coordinates `(u, v)`. CloudGripper commands, however, use normalized workspace coordinates `(x, y)`. A reliable pixel-to-workspace conversion was therefore required before perception results could be used for planning and control.
 
 <p align="center">
-  <img src="images/root04_updated_v3.png"
+  <img src="images/root04.png"
        alt="Robot-specific mapping, automatic robot matching, runtime coordinate conversion, and extended state representation"
        width="1000"/>
 </p>
