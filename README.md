@@ -6,13 +6,13 @@
 
 **Kookmin University · Team K-DAS · IEEE ICRA 2026 Cloud Robotics Competition**
 
-K-DAS는 원격 CloudGripper 환경에서 서로 성격이 완전히 다른 두 manipulation task를 하나의 시스템 관점으로 해결했다. **Task 1**에서는 강체 물체를 pushing만으로 목표 자세에 정렬했고, **Task 2**에서는 한쪽 끝이 고정된 rope-like object의 전체 형상을 제어했다. 두 task 사이에는 robot-specific visual mapping을 공통 기반으로 두었다.
+K-DAS solved two fundamentally different manipulation tasks in the remote CloudGripper environment from a unified systems perspective. In **Task 1**, rigid objects were aligned to target poses using pushing only. In **Task 2**, the full shape of a rope-like object with one fixed endpoint was controlled. A robot-specific visual mapping module served as a shared foundation for both tasks.
 
-이 repository는 단순히 최종 코드를 모아 놓은 결과물이 아니다. 우리가 어떤 문제를 먼저 보았고, 어떤 가정이 실제 로봇에서 무너졌으며, 그 실패가 다음 모델과 실행 구조를 어떻게 만들었는지를 기록한다.
+This repository is not merely a collection of final code. It documents which problems we encountered first, which assumptions failed on the real robot, and how those failures shaped the next model and execution architecture.
 
-> **“좋은 알고리즘 하나를 찾는 것보다, 불완전한 관측과 모델 오차 속에서도 다음 결정을 계속 올바르게 만들 수 있는 시스템을 설계할 수 있을까?”**
+> **“Rather than finding one perfect algorithm, can we design a system that continues to make correct decisions under imperfect observations and model mismatch?”**
 
-이 질문이 K-DAS의 Task 1, Task 2, Mapping을 하나로 묶는 출발점이었다.
+This question became the common starting point that connected Task 1, Task 2, and Mapping.
 
 ---
 
@@ -45,7 +45,7 @@ K-DAS는 원격 CloudGripper 환경에서 서로 성격이 완전히 다른 두 
   </tr>
 </table>
 
-두 task는 대상 물체의 성질은 완전히 다르지만, **관측 → workspace 표현 → action 선택 → 실제 실행 → 재관측**이라는 동일한 closed-loop 원칙 위에서 개발되었다.
+Although the two tasks involve fundamentally different object properties, both were developed around the same closed-loop principle: **observation → workspace representation → action selection → real execution → re-observation**.
 
 ---
 
@@ -62,32 +62,32 @@ K-DAS는 원격 CloudGripper 환경에서 서로 성격이 완전히 다른 두 
   <img src="images/results.png" alt="RGMC 2026 Final Competition Results — K-DAS Overall 1st Place" width="1000"/>
 </p>
 
-Overall 1위는 한 task에만 집중한 결과가 아니었다. K-DAS는 rigid object와 deformable object라는 서로 다른 문제에서 모두 경쟁력 있는 성능을 확보했고, 두 task를 공통 mapping과 closed-loop execution 구조 위에 통합했다. Task 1에서는 최종 1위를 기록했고, Task 2에서는 original rope와 longer rope에서 각각 **92.61**, **87.73**을 기록하며 최종 **81.64점**을 달성했다.
+The overall 1st-place result was not achieved by focusing on only one task. K-DAS delivered competitive performance on both rigid-object and deformable-object manipulation while integrating them on top of shared mapping and closed-loop execution principles. Task 1 finished 1st overall, while Task 2 achieved **92.61** on the original rope and **87.73** on the longer rope, for a final score of **81.64**.
 
-우리가 가장 중요하게 본 성과는 점수 자체만이 아니다. 물리 모델, 학습 모델, planning, runtime 보정을 한 방향으로 연결했을 때 실제 원격 로봇에서도 반복 가능한 결과를 만들 수 있다는 것을 확인했다.
+The result we valued most was not the score itself. We confirmed that when physics models, learned models, planning, and runtime correction are connected coherently, repeatable performance can be achieved even on a remote real robot.
 
 ---
 
 ## 2. What We Wanted to Build
 
-CloudGripper competition을 처음 분석했을 때, Task 1과 Task 2는 서로 다른 문제처럼 보였다.
+When we first analyzed the CloudGripper competition, Task 1 and Task 2 appeared to be completely different problems.
 
-- Task 1은 강체의 위치와 방향을 pushing으로 맞추는 문제였다.
-- Task 2는 단일 pose로 표현할 수 없는 rope의 전체 형상을 바꾸는 문제였다.
+- Task 1 required matching the position and orientation of a rigid object through pushing.
+- Task 2 required changing the full shape of a rope that cannot be represented by a single pose.
 
-하지만 실제 구현을 시작하자 두 task는 같은 질문으로 수렴했다.
+Once implementation began, however, both tasks converged to the same set of questions.
 
-1. 카메라에서 본 위치를 로봇이 이해하는 좌표로 어떻게 바꿀 것인가?
-2. 지금 action을 실행했을 때 다음 상태를 어떻게 예상할 것인가?
-3. 가능한 action 중 어떤 것을 선택해야 실제 목표에 가까워지는가?
-4. 계산상 좋은 action이 실제 robot cell에서도 안전하게 작동하는가?
-5. 예측이 틀렸을 때 다음 step에서 어떻게 회복할 것인가?
+1. How should positions observed in the camera image be converted into coordinates understood by the robot?
+2. How can we predict the next state after executing the current action?
+3. Which action among many candidates will actually move the system closer to the goal?
+4. Will an action that looks good computationally remain safe and executable inside the real robot cell?
+5. If the prediction is wrong, how should the system recover at the next step?
 
 <p align="center">
   <img src="images/root03.png" alt="Questions that shaped the K-DAS system" width="1100"/>
 </p>
 
-결국 우리가 만든 것은 두 개의 독립적인 notebook이 아니라 다음 공통 구조였다.
+What we ultimately built was not two independent notebooks, but a shared system structure.
 
 ```text
 Observe
@@ -98,48 +98,48 @@ Observe
 → plan from the measured state
 ```
 
-이 구조를 통해 모델의 오차가 여러 step 동안 누적되는 것을 막고, robot마다 다른 calibration과 접촉 불확실성을 실제 관측으로 다시 보정할 수 있었다.
+This structure prevented model error from accumulating over many steps and allowed robot-specific calibration and contact uncertainty to be corrected repeatedly using new observations.
 
 ---
 
 ## 3. Why the Competition Was Difficult
 
-Cloud robotics 환경에서는 실제 로봇을 눈앞에서 직접 조정할 수 없다. 카메라 이미지, API command, delayed state query만으로 문제를 해결해야 하며, robot cell이 바뀌면 camera pose와 유효 workspace도 달라진다.
+In a cloud robotics environment, the robot cannot be adjusted directly in front of us. The problem must be solved using camera images, API commands, and delayed state queries, while the camera pose and valid workspace can change when the assigned robot cell changes.
 
-이 조건에서 단순히 perception 정확도나 dynamics 정확도만 높여서는 충분하지 않았다.
+Under these conditions, improving perception accuracy or dynamics accuracy alone was not sufficient.
 
-- 픽셀 좌표가 조금만 흔들려도 contact point가 달라졌다.
-- 짧은 contact offset이 T-shape에서는 큰 rotation error로 이어졌다.
-- rope endpoint에서는 같은 rotation command가 중앙부와 다르게 전달됐다.
-- 모델이 좋은 action을 선택해도 실제 접근 경로가 없으면 실행할 수 없었다.
-- 한 번 높은 score를 만들었더라도 release 순간 형상이 무너지면 최종 결과가 낮아졌다.
+- Small pixel-coordinate errors changed the effective contact point.
+- A short contact offset could cause a large rotation error for the T-shape.
+- The same rotation command behaved differently near a rope endpoint than in the central region.
+- Even if the model selected a good action, it could not be executed when no valid approach path existed.
+- A high score could still collapse if the shape changed during release.
 
-그래서 K-DAS는 문제를 mapping, geometry, dynamics, planning, policy, runtime으로 분해하되, 각 모듈을 따로 최적화하는 데서 멈추지 않았다. **각 모듈의 출력이 다음 단계에서 실제로 신뢰할 수 있는가**를 계속 확인하며 전체 loop를 수정했다.
+K-DAS therefore decomposed the system into mapping, geometry, dynamics, planning, policy, and runtime components, but did not optimize them independently. We continuously asked whether **the output of each module remained trustworthy when consumed by the next stage**, and revised the full loop accordingly.
 
 ---
 
 ## 4. [Shared Mapping](mapping/README.md) — Before Control, We Needed a Common Language
 
-> **“이미지에서 보이는 한 점을 로봇에게 정확히 어디라고 말할 수 있는가?”**
+> **“Can we tell the robot exactly where a point observed in the image exists in the workspace?”**
 
-Task 1의 물체 중심과 꼭짓점, Task 2의 20개 rope node는 모두 camera pixel에서 시작한다. 그러나 robot command는 workspace coordinate를 사용한다. 이 둘을 연결하지 못하면 아무리 좋은 dynamics와 planner가 있어도 실제 action으로 이어질 수 없다.
+The object center and vertices in Task 1, and the 20 rope nodes in Task 2, all originate in camera pixels. Robot commands, however, operate in workspace coordinates. Without a reliable connection between the two, even a strong dynamics model or planner cannot produce executable robot actions.
 
 <p align="center">
   <img src="images/root04.png" alt="Robot-specific mapping workflow" width="1000"/>
 </p>
 
-초기에는 HSV 기반으로 gripper center를 찾았지만, 조명과 색 분포에 따라 중심이 흔들리며 calibration 품질이 낮아졌다. 이를 해결하기 위해 **YOLOv8 segmentation**으로 gripper mask를 검출하고, robot arm을 workspace 전체에 이동시키며 pixel–workspace 대응쌍을 다시 수집했다.
+Initially, the gripper center was detected using HSV-based processing, but the estimate was unstable under lighting and color-distribution changes, reducing calibration quality. We therefore switched to **YOLOv8 segmentation** for gripper-mask detection and recollected pixel-to-workspace correspondences by moving the robot arm across the full workspace.
 
-최종 mapping은 단순 nearest-neighbor lookup이 아니다.
+The final mapping module was more than a nearest-neighbor lookup.
 
-- robot별 camera intrinsic과 distortion correction
+- robot-specific camera intrinsics and distortion correction
 - **33 × 33 calibration grid**
-- point당 multiple-frame detection과 median aggregation
-- `x = f_x(u,v)`, `y = f_y(u,v)` 형태의 **Clough–Tocher 2D interpolation**
-- calibration point가 아닌 off-grid 위치에서 별도 검증
-- robot별 LUT와 유효 범위 분리
+- multiple-frame detection and median aggregation at each point
+- **Clough–Tocher 2D interpolation** in the form `x = f_x(u,v)`, `y = f_y(u,v)`
+- separate validation at off-grid positions not used for calibration
+- robot-specific LUTs and valid workspace ranges
 
-이 과정은 Task 1과 Task 2가 같은 좌표 언어를 쓰게 만든 공통 기반이었다. 또한 deep regression을 무조건 적용하기보다, perception error와 mapping error를 분리해 해석할 수 있고 calibration 범위 밖의 위험한 extrapolation을 피할 수 있는 interpolation 방식을 선택했다.
+This module provided the shared coordinate language used by both Task 1 and Task 2. Instead of applying deep regression by default, we selected an interpolation-based method that kept perception and mapping error interpretable and avoided risky extrapolation outside the calibrated region.
 
 Full documentation: [`mapping/README.md`](mapping/README.md)
 
@@ -147,186 +147,186 @@ Full documentation: [`mapping/README.md`](mapping/README.md)
 
 ## 5. [Task 1](task1/README.md) — Predict Before Pushing
 
-> **“물체를 밀어야 한다는 것은 알겠는데, 어디를 어느 방향으로 얼마나 밀어야 하는가?”**
+> **“We know the object must be pushed, but where, in which direction, and by how much?”**
 
-Task 1은 겉보기에는 단순한 pushing 문제지만, 실제로는 underactuated manipulation 문제였다. 로봇은 물체를 잡아 원하는 pose로 옮길 수 없고, 한 번의 접촉으로 translation과 rotation이 동시에 발생한다. 같은 push도 mass distribution, contact point, friction에 따라 결과가 달라진다.
+Task 1 appeared simple at first, but was fundamentally an underactuated manipulation problem. The robot could not grasp an object and place it directly at a desired pose; a single contact simultaneously produced translation and rotation. The same push could also generate different outcomes depending on mass distribution, contact point, and friction.
 
 <p align="center">
   <img src="images/root05.png" alt="Task 1 real robot execution" width="920"/>
 </p>
 
-### 5.1 [Geometry](task1/geometry/README.md) — From shape detection to a planning state
+### 5.1 [Geometry](task1/geometry/README.md) — From Shape Detection to a Planning State
 
-우리는 circle, square, T-shape를 서로 다른 hard-coded command로 다루는 대신, contour, pose, polygon, keypoint, IoU로 표현했다. 이 공통 representation 위에서 symmetry와 orientation ambiguity를 별도로 처리했다.
+Instead of treating circles, squares, and T-shapes with separate hard-coded commands, we represented them using contours, poses, polygons, keypoints, and IoU. Symmetry and orientation ambiguity were then handled explicitly on top of this shared representation.
 
-특히 T-shape에서는 detector와 planner의 기준축이 약 90° 어긋나는 문제가 있었고, 중심점 하나만 맞추는 방식으로는 자세가 안정적으로 정렬되지 않았다. 현재와 목표 형상 모두에 동일한 basis correction을 적용하고, 8개 꼭짓점 전체를 이용해 rigid alignment를 수행했다. 사각형에는 cyclic vertex permutation을 적용해 꼭짓점 시작 번호 차이가 불필요한 회전으로 이어지는 것을 막았다.
+For T-shapes, the detector and planner initially used coordinate bases offset by approximately 90°, and aligning only the center point did not stabilize orientation. We applied the same basis correction to both the current and target shapes and performed rigid alignment using all eight vertices. For squares, cyclic vertex permutation prevented arbitrary differences in starting vertex index from producing unnecessary rotations.
 
-### 5.2 [Dynamics](task1/dynamics/README.md) + [Planning](task1/planning/README.md) — From “move toward the goal” to candidate-wise prediction
+### 5.2 [Dynamics](task1/dynamics/README.md) + [Planning](task1/planning/README.md) — From “Move Toward the Goal” to Candidate-Wise Prediction
 
-처음에는 목표 중심을 향해 밀면 충분할 것처럼 보였다. 그러나 비대칭 물체에서는 중심이 가까워져도 orientation이 악화될 수 있었고, 긴 push는 빠르지만 overshoot와 workspace 이탈 위험이 컸다.
+At first, pushing toward the target center seemed sufficient. For asymmetric objects, however, the center could move closer while orientation became worse, and long pushes were fast but prone to overshoot and workspace violations.
 
-그래서 다음 구조를 만들었다.
+We therefore developed the following structure.
 
-1. 현재 pose와 target pose 사이에 minimum-jerk reference path를 생성한다.
-2. 물체 표면에서 contact point를 sampling한다.
-3. normal push와 양방향 spin candidate, 여러 stroke length를 조합한다.
-4. 각 candidate를 1-step rigid-body dynamics로 rollout한다.
-5. progress, direction agreement, overshoot, boundary margin, approach cost로 점수를 계산한다.
-6. 실행 가능한 후보만 남겨 실제 robot action으로 보낸다.
+1. Generate a minimum-jerk reference path between the current and target poses.
+2. Sample contact points on the object surface.
+3. Combine normal pushes, bidirectional spin candidates, and multiple stroke lengths.
+4. Roll out each candidate using 1-step rigid-body dynamics.
+5. Score candidates using progress, direction agreement, overshoot, boundary margin, and approach cost.
+6. Send only executable candidates to the real robot.
 
 <p align="center">
   <img src="images/root06.png" alt="Task 1 model-based closed-loop planning pipeline" width="1000"/>
 </p>
 
-### 5.3 [Planning](task1/planning/README.md) + [Runtime](task1/runtime/README.md) — A good action still needs a path
+### 5.3 [Planning](task1/planning/README.md) + [Runtime](task1/runtime/README.md) — A Good Action Still Needs a Path
 
-물리적으로 좋은 push라도 gripper가 contact point까지 갈 수 없다면 무의미하다. 실제 테스트에서는 candidate가 충분히 생성됐지만 safety margin 때문에 실행 가능한 후보가 0개가 되는 문제가 있었다.
+A physically good push is meaningless if the gripper cannot reach the contact point. In real tests, many candidates were generated successfully but all were rejected because of the safety margin, leaving zero executable actions.
 
-이를 해결하기 위해 접근 경로를 다음 순서로 구성했다.
+To address this, the approach planner was organized as:
 
 ```text
 Direct → L-shape → U-shape → Short A*
 ```
 
-간단하고 짧은 경로를 먼저 사용하고, 필요한 경우에만 더 복잡한 탐색을 수행했다. Push 이후에는 물체에서 retreat한 뒤 다시 관측하여 다음 planning을 새로 시작했다.
+The simplest and shortest paths were attempted first, while more complex search was used only when necessary. After each push, the robot retreated from the object, re-observed the scene, and restarted planning from the measured state.
 
-### 5.4 What Task 1 achieved
+### 5.4 What Task 1 Achieved
 
-- 최종 **49.69점 · Task 1 1위**
-- 사각형 통합 검증 **11 / 11회 final IoU ≥ 0.8**
-- Circle, Square, T, T-long뿐 아니라 unseen Plus와 Organic shape까지 동일 pipeline으로 처리
+- Final **49.69 points · 1st place in Task 1**
+- **11 / 11 square validation runs with final IoU ≥ 0.8**
+- One shared pipeline for Circle, Square, T, T-long, and unseen Plus and Organic shapes
 
-Task 1의 성과는 완벽한 physics model 하나를 얻은 데 있지 않았다. 짧은 horizon에서 후보의 상대적 품질을 예측하고, 실제 실행 후 다시 관측하는 구조를 통해 model mismatch를 제어 가능한 수준으로 만들었다.
+The key contribution of Task 1 was not a single perfect physics model. Short-horizon prediction of relative candidate quality, combined with re-observation after every real action, kept model mismatch within a manageable range.
 
 Full overview: [`task1/README.md`](task1/README.md)
 
 | Module | Core question | Documentation |
 |---|---|---|
-| Geometry | 서로 다른 형상을 같은 기준으로 어떻게 정렬할 것인가? | [`task1/geometry/`](task1/geometry/README.md) |
-| Dynamics | 한 번의 push가 다음 pose를 어떻게 바꾸는가? | [`task1/dynamics/`](task1/dynamics/README.md) |
-| Planning | 어떤 candidate가 실제 progress를 만드는가? | [`task1/planning/`](task1/planning/README.md) |
-| Runtime | 계획된 push를 실제 로봇에서 어떻게 반복 가능하게 실행할 것인가? | [`task1/runtime/`](task1/runtime/README.md) |
+| Geometry | How can different shapes be aligned using a common representation? | [`task1/geometry/`](task1/geometry/README.md) |
+| Dynamics | How does one push change the next pose? | [`task1/dynamics/`](task1/dynamics/README.md) |
+| Planning | Which candidate produces real progress? | [`task1/planning/`](task1/planning/README.md) |
+| Runtime | How can a planned push be executed repeatedly and reliably on the real robot? | [`task1/runtime/`](task1/runtime/README.md) |
 
 ---
 
 ## 6. [Task 2](task2/README.md) — Model What Cannot Be Reduced to a Pose
 
-> **“중심과 각도로 표현할 수 없는 로프를, 어떤 상태와 모델로 제어할 것인가?”**
+> **“How should we represent and control a rope whose state cannot be reduced to a center position and orientation?”**
 
-Task 2는 한쪽 끝이 고정된 deformable linear object의 전체 형상을 목표와 가깝게 만드는 문제였다. 로프는 강체처럼 `x, y, θ`로 표현할 수 없으며, 한 지점을 움직였을 때 변형이 인접 구간과 endpoint까지 전달된다.
+Task 2 required matching the full shape of a deformable linear object with one fixed endpoint to a target. Unlike a rigid body, the rope cannot be represented by `x, y, θ`, and moving one point propagates deformation through neighboring segments and toward the endpoint.
 
 <p align="center">
   <img src="images/root07.png" alt="Task 2 rope manipulation before and after" width="920"/>
 </p>
 
-우리는 로프를 **20개의 ordered node**로 표현하고, 문제를 현재 node array를 target node array에 가깝게 이동시키는 closed-loop control problem으로 재구성했다.
+We represented the rope using **20 ordered nodes** and reformulated the task as a closed-loop control problem that moves the current node array toward the target node array.
 
-### 6.1 [DER Dynamics](task2/dynamics/der/README.md) — Start from physics, not from a black box
+### 6.1 [DER Dynamics](task2/dynamics/der/README.md) — Start from Physics, Not from a Black Box
 
-첫 시도는 Discrete Elastic Rods의 관점을 적용한 planar DER model이었다. Fixed end, bending, damping, edge-length preservation을 통해 로프의 기본 거동을 설명하려 했다.
+The first approach was a planar DER model inspired by Discrete Elastic Rods. Fixed-end constraints, bending, damping, and edge-length preservation were used to capture the rope’s basic deformation behavior.
 
-DER는 중요한 physical prior를 제공했지만 실제 rope material, table friction, gripper contact, release dynamics까지 정확히 식별하기는 어려웠다. 여기서 우리는 물리 모델을 버리고 pure learning으로 전환하지 않았다.
+DER provided an important physical prior, but accurately identifying real rope material properties, table friction, gripper contact, and release dynamics remained difficult. At this point, we did not discard physics and switch to pure learning.
 
-질문을 다음과 같이 바꾸었다.
+Instead, we reframed the problem:
 
-> **“물리 모델이 설명한 부분은 유지하고, 남은 systematic error만 학습할 수 있는가?”**
+> **“Can we preserve the part explained by physics and learn only the remaining systematic error?”**
 
-### 6.2 [Residual GNN](task2/dynamics/residual_gnn/README.md) — Correcting, not replacing, physics
+### 6.2 [Residual GNN](task2/dynamics/residual_gnn/README.md) — Correcting, Not Replacing, Physics
 
-DER prediction과 실제 next state의 차이를 residual target으로 정의하고, 20-node chain graph를 사용하는 GNN이 각 node의 correction을 예측하도록 했다.
+The difference between the DER prediction and the actual next state was defined as a residual target, and a GNN over the 20-node chain graph predicted a correction for each node.
 
 - DER validation RMSE: **7.67 mm**
 - Residual GNN validation RMSE: **2.41 mm**
 
-이후 위치 오차만 줄이면 edge가 늘어나거나 줄어드는 문제가 나타났다. 이를 해결하기 위해 target-edge loss와 edge projection을 추가했다. Projection도 무조건 강하게 적용하지 않고, shape tracking과 edge consistency 사이의 trade-off를 실험해 중간 강도를 선택했다.
+Later, we found that reducing position error alone could allow edges to stretch or shrink unrealistically. Target-edge loss and edge projection were introduced to address this issue. Projection was not applied as strongly as possible; instead, we experimentally selected an intermediate strength that balanced shape tracking and edge consistency.
 
-### 6.3 [MPC](task2/planning/mpc/README.md) — How to create good actions
+### 6.3 [MPC](task2/planning/mpc/README.md) — How to Create Good Actions
 
-Dynamics model이 생겼다고 곧바로 좋은 policy가 생기는 것은 아니었다. 현재 rope state에서 가능한 grasp node, direction, stroke candidate를 생성하고 각각의 다음 상태를 hybrid dynamics로 예측해야 했다.
+A dynamics model does not immediately provide a good policy. From the current rope state, the system must generate grasp-node, direction, and stroke candidates and predict the resulting next state using the hybrid dynamics model.
 
-초기 1-step MPC는 중간평가에서 **76.90 / 100 · 1위**를 기록했다. 그러나 목표 근처에 접근한 뒤 다시 멀어지는 경우와 큰 계산량이 한계로 나타났다.
+The initial 1-step MPC achieved **76.90 / 100 · 1st place** in the mid-term evaluation. However, it still suffered from near-goal failures and high computational cost.
 
-그래서 first action 이후에 가능한 next action까지 보는 **2-step MPC**로 확장했다.
+We therefore extended the planner to **2-step MPC**, which evaluates not only the first action but also the next possible action.
 
 - success rate: **4 / 5 → 5 / 5**
-- average step-to-success: **15.50 → 9.33**
+- average steps to success: **15.50 → 9.33**
 - final mean error: **4.408 mm → 3.685 mm**
 
-### 6.4 [Candidate-aware BC / Offline RL](task2/policy/candidate_aware_rl/README.md) — From a slow teacher to a fast policy
+### 6.4 [Candidate-aware BC / Offline RL](task2/policy/candidate_aware_rl/README.md) — From a Slow Teacher to a Fast Policy
 
-MPC는 좋은 action을 만들었지만 매 step마다 많은 candidate rollout이 필요했다. 따라서 MPC를 최종 online controller로 고집하지 않고, **teacher generator**로 재해석했다.
+MPC generated strong actions, but required many candidate rollouts at every step. Rather than forcing MPC to remain the final online controller, we reinterpreted it as a **teacher generator**.
 
-- Behavior Cloning으로 high-quality teacher action을 빠르게 근사
-- selected action뿐 아니라 unselected candidate의 상대적 품질도 학습하는 candidate-aware offline RL
-- Q-target clipping과 scale 조정으로 critic 발산을 억제한 qsafe stabilization
+- Behavior Cloning approximated high-quality teacher actions with fast inference
+- Candidate-aware offline RL learned not only the selected action but also the relative quality of unselected candidates
+- qsafe stabilization suppressed critic divergence through Q-target clipping and scale adjustment
 
-이 구조는 “MPC를 대체하는 RL”이 아니라, **MPC가 만든 판단 기준을 더 빠르게 실행하는 policy**였다.
+This was not “RL replacing MPC,” but rather **a policy that executes MPC’s decision criteria more efficiently**.
 
-### 6.5 [Runtime Safety](task2/runtime/README.md) — The last gap was physical execution
+### 6.5 [Runtime Safety](task2/runtime/README.md) — The Last Gap Was Physical Execution
 
-Simulation과 rollout에서 좋은 action이 실제 로봇에서도 그대로 작동하지는 않았다.
+Actions that looked good in simulation and rollout did not always transfer directly to the real robot.
 
-- rotation command의 실제 방향이 예상과 반대인 경우
-- endpoint에서 command–response 관계가 약해지는 경우
-- 큰 회전이 servo range와 충돌하는 경우
-- release 순간 rope가 되돌아가 score가 감소하는 경우
+- rotation commands could act in the opposite direction from expectation
+- command-response consistency weakened near endpoints
+- large rotations could conflict with the servo range
+- the rope could relax after release and reduce the score
 
-이를 해결하기 위해 directed tangent, rotation probe, geometry risk, endpoint-specific correction, initial push, score hold를 추가했다. 특히 pre-release score hold는 drag 이후 score가 충분히 높을 때 gripper를 닫은 상태로 유지해 release-induced shape loss를 막았다.
+We therefore added directed tangent analysis, rotation probes, geometry risk, endpoint-specific correction, initial push, and score hold. In particular, pre-release score hold kept the gripper closed when the score after a drag was sufficiently high, preventing release-induced shape loss.
 
-실제 로그에서 분석 가능한 18개 action 중 **14개 action이 평균 node error를 감소**시켰고, 평균 error는 **173.69 mm → 106.23 mm**로 줄었다. 이 결과는 runtime 보정이 포함된 실제 실행 action이 전반적으로 목표 형상에 가까워지는 방향으로 작동했음을 보여준다.
+Among 18 analyzable real-robot actions, **14 reduced the average node error**, and the mean error decreased from **173.69 mm → 106.23 mm**. These logs showed that the complete execution pipeline, including runtime correction, generally moved the rope toward the target shape.
 
 <p align="center">
   <img src="images/root008.png" alt="Task 2 system evolution" width="1020"/>
 </p>
 
-### 6.6 What Task 2 achieved
+### 6.6 What Task 2 Achieved
 
-- 최종 **81.64점 · Task 2 2위**
+- Final **81.64 points · 2nd place in Task 2**
 - Original rope: **92.61**
 - Longer rope: **87.73**
 - Thicker red rope: **64.59**
-- Mid-term evaluation: **76.90 / 100 · 1위**
-- DER → Residual GNN → 2-step MPC → BC/RL → Runtime Safety의 end-to-end pipeline 구축
+- Mid-term evaluation: **76.90 / 100 · 1st place**
+- End-to-end pipeline: DER → Residual GNN → 2-step MPC → BC/RL → Runtime Safety
 
-Task 2의 핵심 성과는 특정 neural policy 하나가 아니었다. Physics, learned correction, future-aware planning, fast policy, geometry-aware execution을 서로의 약점을 보완하도록 연결한 것이었다.
+The central achievement of Task 2 was not one neural policy. It was the integration of physics, learned correction, future-aware planning, fast policy inference, and geometry-aware execution so that each layer compensated for weaknesses in the others.
 
 Full overview: [`task2/README.md`](task2/README.md)
 
 | Module | Core question | Documentation |
 |---|---|---|
-| DER | 로프의 기본 변형 구조를 물리적으로 설명할 수 있는가? | [`task2/dynamics/der/`](task2/dynamics/der/README.md) |
-| Residual GNN | 물리 모델의 systematic error를 학습으로 보정할 수 있는가? | [`task2/dynamics/residual_gnn/`](task2/dynamics/residual_gnn/README.md) |
-| MPC | 좋은 teacher action을 어떻게 만들 것인가? | [`task2/planning/mpc/`](task2/planning/mpc/README.md) |
-| BC / Offline RL | 느린 MPC 판단을 빠른 policy로 옮길 수 있는가? | [`task2/policy/candidate_aware_rl/`](task2/policy/candidate_aware_rl/README.md) |
-| Runtime Safety | 실제 robot-specific uncertainty를 어떻게 억제할 것인가? | [`task2/runtime/`](task2/runtime/README.md) |
+| DER | Can the basic deformation structure of the rope be explained physically? | [`task2/dynamics/der/`](task2/dynamics/der/README.md) |
+| Residual GNN | Can systematic error in the physics model be corrected through learning? | [`task2/dynamics/residual_gnn/`](task2/dynamics/residual_gnn/README.md) |
+| MPC | How can high-quality teacher actions be generated? | [`task2/planning/mpc/`](task2/planning/mpc/README.md) |
+| BC / Offline RL | Can slow MPC decisions be transferred into a fast policy? | [`task2/policy/candidate_aware_rl/`](task2/policy/candidate_aware_rl/README.md) |
+| Runtime Safety | How can real robot-specific uncertainty be suppressed during execution? | [`task2/runtime/`](task2/runtime/README.md) |
 
 ---
 
 ## 7. What Made the System Work
 
-### 7.1 We used physics where it was identifiable
+### 7.1 We Used Physics Where It Was Identifiable
 
-Task 1에서는 force, torque, COM과 접촉 기하를 사용했고, Task 2에서는 DER의 connectivity, bending, fixed-end prior를 사용했다. 모델은 완벽한 digital twin으로 포장하지 않고, short-horizon decision에 필요한 만큼의 구조를 제공하도록 사용했다.
+Task 1 used force, torque, center of mass, and contact geometry. Task 2 used DER connectivity, bending, and fixed-end priors. These models were not presented as perfect digital twins; they were used to provide just enough structure for short-horizon decision making.
 
-### 7.2 We learned only what the model could not explain
+### 7.2 We Learned Only What the Model Could Not Explain
 
-Task 2의 GNN은 전체 dynamics를 처음부터 대체하지 않았다. DER prediction과 실제 transition 사이의 residual을 학습했다. 이 선택은 제한된 dataset에서도 물리적 구조를 유지하면서 실제 환경의 systematic bias를 보정하게 했다.
+The Task 2 GNN did not replace the entire dynamics model. It learned the residual between the DER prediction and the real transition. This preserved physical structure under limited data while correcting systematic bias from the real environment.
 
-### 7.3 We treated failures as architecture signals
+### 7.3 We Treated Failures as Architecture Signals
 
 - HSV center instability → [YOLOv8-seg mapping](mapping/README.md)
 - fixed goal scoring → [candidate-specific reference progress](task1/planning/README.md)
-- approach candidates all rejected → [contact-aware safety interpretation](task1/planning/README.md)
+- all approach candidates rejected → [contact-aware safety interpretation](task1/planning/README.md)
 - 1-step near-goal failure → [2-step MPC](task2/planning/mpc/README.md)
 - critic divergence → [qsafe target clipping](task2/policy/candidate_aware_rl/README.md)
 - endpoint uncertainty → [endpoint-specific runtime limits](task2/runtime/README.md)
 - release-induced score loss → [pre-release score hold](task2/runtime/README.md)
 
-각 실패는 단순 parameter tuning으로 덮지 않고, 시스템 구조를 바꾸는 근거로 사용했다.
+Each failure was used as evidence for changing the system architecture rather than being hidden by parameter tuning.
 
-### 7.4 We closed the loop after every action
+### 7.4 We Closed the Loop After Every Action
 
-두 task 모두 다음 action을 이전 prediction에서 시작하지 않는다. 실제 camera observation으로 state를 다시 만들고, 그 state에서 planning을 새로 수행한다. 이 원칙은 imperfect model을 실전에서 사용할 수 있게 만든 가장 중요한 안전장치였다.
+Neither task begins the next action from the previous prediction. The state is reconstructed from the real camera observation, and planning starts again from the measured state. This principle was the most important safeguard that made imperfect models usable in the real system.
 
 ---
 
@@ -334,16 +334,16 @@ Task 2의 GNN은 전체 dynamics를 처음부터 대체하지 않았다. DER pre
 
 | Area | Milestone |
 |---|---|
-| Mapping | YOLOv8-seg 기반 robot-specific 33×33 calibration과 Clough–Tocher interpolation |
-| Task 1 | 11/11 square validation runs에서 final IoU ≥ 0.8 |
-| Task 1 | Direct → L → U → short A* 접근 계층과 closed-loop replanning |
+| Mapping | Robot-specific 33×33 calibration using YOLOv8-seg and Clough–Tocher interpolation |
+| Task 1 | Final IoU ≥ 0.8 in all 11/11 square validation runs |
+| Task 1 | Direct → L → U → short A* approach hierarchy with closed-loop replanning |
 | Task 2 Dynamics | DER RMSE 7.67 mm → Residual GNN RMSE 2.41 mm |
-| Task 2 Planning | 2-step MPC로 average step-to-success 15.50 → 9.33 |
+| Task 2 Planning | Average steps to success reduced from 15.50 → 9.33 with 2-step MPC |
 | Task 2 Policy | BC warm-start + candidate-aware offline RL + qsafe stabilization |
-| Task 2 Runtime | 18개 action 중 14개에서 average node error 감소 |
-| Competition | Task 1 1위, Task 2 2위, Overall 1위 |
+| Task 2 Runtime | Average node error decreased in 14 of 18 analyzed actions |
+| Competition | Task 1 1st, Task 2 2nd, Overall 1st |
 
-이 수치들은 개별 module의 benchmark이면서 동시에 전체 시스템이 실제 competition loop에서 작동했다는 근거다.
+These values serve both as module-level benchmarks and as evidence that the full system functioned within the competition loop.
 
 ---
 
@@ -378,53 +378,53 @@ RGMC2026-KDAS/
       └─ README.md
 ```
 
-Root README는 전체 문제와 개발 서사를 설명한다. 각 Task README는 해당 task의 end-to-end 흐름을 설명하며, 세부 수식·학습 설정·실험 결과는 module README에서 다룬다. 모든 시각 자료는 최상위 `images/` 폴더에서 공통 관리한다.
+The root README explains the overall problem and development story. Each Task README describes the corresponding end-to-end flow, while detailed equations, training settings, and experimental results are documented in the module READMEs. All visual assets are managed centrally in the root-level `images/` directory.
 
 ---
 
 ## 10. Reproducibility and Public Release
 
-향후 코드와 모델을 함께 공개할 때 다음 항목을 추가하면 재현성을 높일 수 있다.
+When code and models are released publicly, reproducibility can be improved by including:
 
-- Python, CUDA, PyTorch와 주요 package version
-- camera coordinate, workspace coordinate, node ordering convention
-- robot별 calibration metadata와 유효 범위
-- dynamics / MPC / policy configuration
-- small sample dataset과 offline visualization notebook
-- weight download link, checksum, license
-- evaluation script와 known limitations
+- Python, CUDA, PyTorch, and major package versions
+- camera-coordinate, workspace-coordinate, and node-ordering conventions
+- robot-specific calibration metadata and valid ranges
+- dynamics / MPC / policy configurations
+- a small sample dataset and offline visualization notebook
+- weight download links, checksums, and license information
+- evaluation scripts and known limitations
 
-다음 항목은 제거한다.
+The following should be removed before release:
 
-- CloudGripper token과 private evaluation URL
-- 개인 절대 경로와 계정 정보
-- robot booking 또는 비공개 예약 정보
-- 학번, 서명, 내부 보고서 개인정보
-- 불필요한 duplicate checkpoint와 raw cache
+- CloudGripper tokens and private evaluation URLs
+- personal absolute paths and account information
+- robot-booking or other private reservation information
+- student IDs, signatures, and personal information from internal reports
+- unnecessary duplicate checkpoints and raw caches
 
 ---
 
 ## 11. What This Repository Represents
 
-K-DAS는 논문의 method를 그대로 복제하거나, 최신 모델을 가능한 많이 결합하는 방식으로 접근하지 않았다. 각 기술을 우리 환경의 질문에 맞게 다시 해석했다.
+K-DAS did not approach the problem by copying a paper’s method directly or by combining as many recent models as possible. Each technique was reinterpreted according to the needs of our environment.
 
-- DER는 완전한 rope simulator가 아니라 physical prior로 사용했다.
-- GNN은 physics replacement가 아니라 residual corrector로 사용했다.
-- MPC는 최종 online controller가 아니라 future-aware teacher로 사용했다.
-- RL은 teacher를 무시하는 end-to-end policy가 아니라 candidate quality를 빠르게 근사하는 policy로 사용했다.
-- Runtime layer는 예외 처리 코드가 아니라 실제 로봇에서 성능을 지키는 독립적인 engineering layer로 설계했다.
+- DER was used as a physical prior rather than as a complete rope simulator.
+- GNN was used as a residual corrector rather than as a replacement for physics.
+- MPC was used as a future-aware teacher rather than as the final online controller.
+- RL was used as a fast approximation of candidate quality rather than as an end-to-end policy that ignores the teacher.
+- The runtime layer was designed as an independent engineering layer that preserves performance on the real robot, not as miscellaneous exception-handling code.
 
-이 선택들이 합쳐져, K-DAS는 rigid-object pushing과 deformable-object manipulation을 모두 하나의 closed-loop system으로 완성할 수 있었다.
+Together, these choices allowed K-DAS to complete both rigid-object pushing and deformable-object manipulation within one closed-loop system.
 
-> **우리가 만든 것은 “한 번 잘 움직이는 demo”가 아니라, 관측하고 예측하고 선택하고 실행한 뒤 다시 판단하는 과정을 반복할 수 있는 manipulation system이었다.**
+> **What we built was not a demo that moves correctly once, but a manipulation system that repeatedly observes, predicts, selects, executes, and decides again.**
 
-Task 1 1위, Task 2 2위, Overall 1위는 그 과정이 competition 환경에서도 유효했음을 보여준 결과다.
+Task 1 1st place, Task 2 2nd place, and Overall 1st place demonstrate that this process remained effective in the competition environment.
 
 ---
 
 ## 12. Takeaway
 
-K-DAS의 RGMC 2026 solution은 다음 다섯 요소의 결합이다.
+The K-DAS RGMC 2026 solution combines five core elements.
 
 ```text
 Robot-specific visual calibration
@@ -434,6 +434,6 @@ Robot-specific visual calibration
 + Real-robot closed-loop runtime engineering
 ```
 
-서로 다른 기술을 많이 사용한 것이 핵심은 아니었다. **각 기술이 설명하지 못하는 부분을 다음 계층이 맡도록 시스템을 설계한 것**이 핵심이었다.
+The key was not simply using many different techniques. It was **designing the system so that each layer handled what the previous layer could not explain or guarantee**.
 
 > **From pixels to geometry, from geometry to prediction, and from prediction to reliable robot action.**
