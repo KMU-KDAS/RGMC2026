@@ -78,12 +78,21 @@ Map을 생성하려면 robot을 특정 `(x, y)`로 이동시킨 뒤, camera imag
 
 최종적으로는 YOLOv8n-seg를 이용해 gripper를 segmentation하고, mask contour의 moment로 gripper center를 계산했다. 약 1,000장의 workspace image를 학습에 사용했다.
 
-| Metric | Box | Mask |
-|---|---:|---:|
-| Precision | 0.995 | 0.995 |
-| Recall | 1.000 | 1.000 |
-| mAP50 | 0.995 | 0.995 |
-| mAP50-95 | 0.930 | 0.794 |
+<table align="center">
+  <thead>
+    <tr>
+      <th>Metric</th>
+      <th>Box</th>
+      <th>Mask</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>Precision</td><td align="right">0.995</td><td align="right">0.995</td></tr>
+    <tr><td>Recall</td><td align="right">1.000</td><td align="right">1.000</td></tr>
+    <tr><td>mAP50</td><td align="right">0.995</td><td align="right">0.995</td></tr>
+    <tr><td>mAP50-95</td><td align="right">0.930</td><td align="right">0.794</td></tr>
+  </tbody>
+</table>
 
 <p align="center">
   <img src="../images/map15.png" alt="YOLO-based gripper detection" width="760"/>
@@ -254,15 +263,23 @@ $$
 E = \left\|(x_{robot}, y_{robot})-(x_{mapped}, y_{mapped})\right\|_2
 $$
 
-| Metric | Result |
-|---|---:|
-| Valid samples | 25 / 25 |
-| Mean error (normalized) | 0.001816 |
-| Median error (normalized) | 0.002021 |
-| Maximum error (normalized) | 0.003480 |
-| Mean error | 0.272 mm |
-| Median error | 0.303 mm |
-| Maximum error | 0.522 mm |
+<table align="center">
+  <thead>
+    <tr>
+      <th>Metric</th>
+      <th>Result</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>Valid samples</td><td align="right">25 / 25</td></tr>
+    <tr><td>Mean error (normalized)</td><td align="right">0.001816</td></tr>
+    <tr><td>Median error (normalized)</td><td align="right">0.002021</td></tr>
+    <tr><td>Maximum error (normalized)</td><td align="right">0.003480</td></tr>
+    <tr><td>Mean error</td><td align="right">0.272 mm</td></tr>
+    <tr><td>Median error</td><td align="right">0.303 mm</td></tr>
+    <tr><td>Maximum error</td><td align="right">0.522 mm</td></tr>
+  </tbody>
+</table>
 
 <p align="center">
   <img src="../images/map08.png" alt="Off-grid pixel-to-workspace mapping error heatmap" width="720"/>
@@ -305,11 +322,20 @@ Train 영역이 작을 경우에는 Homography를 계산하는 데 사용되는 
 
 Train 영역을 넓히자 test 영역에서의 오차가 크게 감소했다. 이 조건에서 측정된 결과는 다음과 같다.
 
-| Metric | Normalized | Approx. physical error (150 mm scale) |
-|---|---:|---:|
-| RMSE | 0.0027148 | 0.41 mm |
-| Mean error | 0.0023446 | 0.35 mm |
-| Maximum error | 0.0077049 | 1.16 mm |
+<table align="center">
+  <thead>
+    <tr>
+      <th>Metric</th>
+      <th>Normalized</th>
+      <th>Approx. physical error (150 mm scale)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>RMSE</td><td align="right">0.0027148</td><td align="right">0.41 mm</td></tr>
+    <tr><td>Mean error</td><td align="right">0.0023446</td><td align="right">0.35 mm</td></tr>
+    <tr><td>Maximum error</td><td align="right">0.0077049</td><td align="right">1.16 mm</td></tr>
+  </tbody>
+</table>
 
 <p align="center"><b>Large train region (margin = 0.08)</b></p>
 <p align="center">
