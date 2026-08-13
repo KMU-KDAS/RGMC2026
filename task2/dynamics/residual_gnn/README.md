@@ -1,33 +1,35 @@
-<img src="../../../images/t2_gnn01.png" alt="DER and Residual GNN hybrid dynamics pipeline" width="900"/>
+<p align="center">
+  <img src="../../../images/t2_gnn01.png" alt="DER and Residual GNN hybrid dynamics pipeline" width="900"/>
+</p>
 
 # Residual GNN for Rope Dynamics Correction
 
 **Task 2 · Linear Deformable Object Shape Control · Team K-DAS**
 
-이 모듈은 DER 기반 물리 모델이 예측한 다음 로프 상태와 실제 로봇 결과 사이의 **systematic residual error**를 Graph Neural Network로 보정한다. 로프를 20개의 ordered node로 구성된 chain graph로 표현하고, 현재 상태·DER rollout·grasp action 정보를 이용해 각 node의 2D residual displacement를 예측한다.
+This module corrects the **systematic residual error** between the next rope state predicted by the DER-based physics model and the actual real-robot outcome using a Graph Neural Network. The rope is represented as a chain graph of 20 ordered nodes, and the GNN predicts the 2D residual displacement of each node using the current state, DER rollout, and grasp-action information.
 
-> 본 구현은 GraphDLO의 문제 설정과 graph-based dynamics prediction 개념에서 영감을 받았지만, 논문의 전체 architecture를 그대로 복제한 것이 아니다. K-DAS의 DER baseline, 20-node state representation, CloudGripper action format, MPC teacher pipeline에 맞게 구성한 **GraphDLO-inspired residual correction model**이다.
+> This implementation is inspired by the problem formulation of GraphDLO and the concept of graph-based dynamics prediction, but it does not reproduce the full architecture of the original paper. It is a **GraphDLO-inspired residual correction model** adapted to the K-DAS DER baseline, 20-node state representation, CloudGripper action format, and MPC teacher pipeline.
 
 ---
 
 ## 1. Why Residual Learning?
 
-DER는 bending, damping, fixed-end, edge-length preservation과 같은 구조적 prior를 제공했지만, 실제 로프의 세부 거동에는 다음 요소가 함께 작용했다.
+DER provides structural priors such as bending, damping, fixed-end constraints, and edge-length preservation, but the detailed behavior of the real rope is also influenced by:
 
-- 로프 재질과 개체별 차이
-- Table friction과 stick-slip
-- Gripper의 접촉 위치와 jaw interaction
-- Drag speed와 release dynamics
-- Segmentation 및 20-node 추출 오차
-- 고정단에서 멀어질수록 커지는 endpoint propagation uncertainty
+- rope material properties and object-to-object variation
+- table friction and stick-slip behavior
+- gripper contact position and jaw interaction
+- drag speed and release dynamics
+- segmentation and 20-node extraction errors
+- increasing endpoint-propagation uncertainty farther from the fixed end
 
-이 모든 현상을 물리 모델 하나에서 정확하게 식별하기는 어려웠다. 반대로 다음 상태 전체를 pure learning model로 직접 예측하면, 제한된 데이터에서 로프 길이와 연결 구조가 무너질 수 있다.
+Accurately identifying all of these effects within a single physics model is difficult. On the other hand, directly predicting the entire next state with a pure learning model can cause the rope length and connectivity structure to collapse under limited training data.
 
-따라서 질문을 다음과 같이 바꾸었다.
+We therefore reframed the problem as:
 
-> **“DER의 물리적 구조는 유지하면서, 남아 있는 예측 오차만 학습 기반으로 보정할 수 있는가?”**
+> **“Can we preserve the physical structure provided by DER while learning only the remaining prediction error?”**
 
-Residual learning은 GNN이 전체 dynamics를 처음부터 다시 배우는 대신, DER가 설명하지 못한 부분에 집중하도록 만든다.
+Residual learning allows the GNN to focus on the portion that DER cannot explain, rather than relearning the entire dynamics from scratch.
 
 ---
 
@@ -51,9 +53,9 @@ Current rope X_t + Action a_t
                    MPC candidate evaluation
 ```
 
-Residual GNN은 최종 action을 직접 출력하는 policy가 아니다. 이 모듈은 **transition model**의 한 부분이며, 보정된 다음 상태는 1-step/2-step MPC의 candidate evaluation과 teacher dataset 생성에 사용된다.
+The Residual GNN is not a policy that directly outputs the final action. It is part of the **transition model**, and the corrected next state is used for candidate evaluation in 1-step/2-step MPC and for teacher-dataset generation.
 
-관련 문서:
+Related documentation:
 
 - Task 2 overview: [`../../README.md`](../../README.md)
 - DER baseline: [`../der/README.md`](../der/README.md)
@@ -64,44 +66,46 @@ Residual GNN은 최종 action을 직접 출력하는 policy가 아니다. 이 �
 
 ## 3. Hybrid Dynamics Formulation
 
-현재 상태와 action으로 DER prediction을 생성한다.
+DER first generates a next-state prediction from the current state and action.
 
 $$
 \hat{X}_{t+1}^{\mathrm{DER}} = f_{\mathrm{DER}}(X_t,a_t)
 $$
 
-Ground-truth transition에서 DER가 설명하지 못한 residual target은 다음과 같다.
+The residual target that DER fails to explain in the ground-truth transition is:
 
 $$
 \Delta X_{t+1}^{\mathrm{GT}} = X_{t+1}^{\mathrm{GT}}-\hat{X}_{t+1}^{\mathrm{DER}}
 $$
 
-GNN은 residual을 예측한다.
+The GNN predicts this residual:
 
 $$
 \Delta \hat{X}_{t+1}=g_\theta(G_t,a_t,\hat{X}_{t+1}^{\mathrm{DER}})
 $$
 
-최종 prediction은 DER output과 residual correction의 합이다.
+The final prediction is the sum of the DER output and the residual correction:
 
 $$
 \hat{X}_{t+1}=\hat{X}_{t+1}^{\mathrm{DER}}+\Delta \hat{X}_{t+1}
 $$
 
-이 구조의 장점은 다음과 같다.
+This structure provides several advantages.
 
-1. DER가 제공하는 fixed-end, local connectivity, 기본 변형 전달을 유지한다.
-2. GNN의 target magnitude가 전체 node position보다 작은 residual로 제한된다.
-3. 물리 모델과 실제 환경 사이에서 반복되는 bias를 데이터로 학습할 수 있다.
-4. Physics model과 learned correction을 독립적으로 진단할 수 있다.
+1. It preserves the fixed-end constraint, local connectivity, and basic deformation propagation provided by DER.
+2. It limits the learning target to a residual whose magnitude is smaller than that of the full node position.
+3. It allows systematic bias between the physics model and the real environment to be learned from data.
+4. It enables independent diagnosis of the physics model and the learned correction.
 
 ---
 
 ## 4. Rope Graph Representation
 
-<img src="../../../images/t2_gnn02.png" alt="20-node rope graph and action-conditioned features" width="900"/>
+<p align="center">
+  <img src="../../../images/t2_gnn02.png" alt="20-node rope graph and action-conditioned features" width="900"/>
+</p>
 
-로프 상태는 다음 chain graph로 표현한다.
+The rope state is represented as the following chain graph.
 
 $$
 G=(V,E), \qquad |V|=20
@@ -112,58 +116,58 @@ E=\{(i,i+1),(i+1,i)\mid i=0,\ldots,18\}
 $$
 
 - **Node**: ordered rope point
-- **Edge**: 물리적으로 인접한 rope segment
-- **Node index direction**: fixed end에서 free end 방향
-- **Message passing**: grasp에서 발생한 변형 정보가 인접 node를 따라 전달되도록 모델링
+- **Edge**: physically adjacent rope segment
+- **Node-index direction**: from the fixed end toward the free end
+- **Message passing**: propagates deformation information from the grasp point through neighboring nodes
 
-Chain graph를 사용하면 fully connected network보다 로프의 실제 연결 구조를 직접 반영할 수 있다. 또한 node 수가 고정된 20개이므로, 각 prediction은 `[20, 2]` 형태의 residual displacement를 출력한다.
+Using a chain graph directly encodes the physical connectivity of the rope more naturally than a fully connected network. Because the number of nodes is fixed at 20, each prediction outputs a residual displacement tensor of shape `[20, 2]`.
 
 ---
 
 ## 5. Input and Output Features
 
-프로젝트에서 사용한 입력 정보는 다음 범주로 구성된다.
+The input information used in the project is grouped into the following categories.
 
 ### 5.1 Node-local information
 
-- 현재 node 좌표 `X_t[i]`
-- DER가 예측한 node 좌표 `X_DER[i]`
+- current node coordinates `X_t[i]`
+- node coordinates predicted by DER `X_DER[i]`
 - DER displacement `X_DER[i] - X_t[i]`
-- 정규화된 node index
-- grasp node 여부를 나타내는 flag
+- normalized node index
+- grasp-node flag
 
 ### 5.2 Action context
 
 - grasp point
 - target point
 - drag vector
-- 이동 길이
-- 선택된 grasp node index
+- displacement length
+- selected grasp-node index
 
-Action 정보는 grasp node에서만 의미가 있는 feature와 전체 node에 broadcast되는 global context로 나누어 사용할 수 있다. 공개 코드에서는 실제 tensor 구성 순서와 normalization을 configuration 또는 dataset 문서에 명확히 고정해야 한다.
+Action information can be divided into features that are meaningful only at the grasp node and global context broadcast to all nodes. In the public implementation, the exact tensor ordering and normalization should be explicitly fixed in the configuration or dataset documentation.
 
 ### 5.3 Output
 
-각 node의 2D residual displacement를 출력한다.
+The model outputs a 2D residual displacement for every node.
 
 $$
 \Delta \hat{X}_{t+1}\in\mathbb{R}^{20\times2}
 $$
 
-Fixed-end node는 후처리 또는 mask를 통해 이동하지 않도록 유지한다.
+The fixed-end node is kept stationary using post-processing or a mask.
 
 ---
 
 ## 6. Network Structure
 
-전체 구조는 다음 세 단계로 설명할 수 있다.
+The overall network can be described in three stages.
 
 1. **Node/Action Encoder**  
-   현재 state, DER prediction과 action context를 hidden representation으로 변환한다.
+   Converts the current state, DER prediction, and action context into hidden representations.
 2. **Graph Message Passing**  
-   인접 node 사이에서 정보를 교환하여 local deformation propagation을 학습한다.
+   Exchanges information between neighboring nodes to learn local deformation propagation.
 3. **Residual Decoder**  
-   각 node hidden state에서 `(Δx, Δy)`를 회귀한다.
+   Regresses `(Δx, Δy)` from each node hidden state.
 
 ```python
 node_hidden = node_encoder(node_features, action_context)
@@ -175,19 +179,19 @@ residual_xy = residual_decoder(node_hidden)   # [20, 2]
 predicted_next = der_next + residual_xy
 ```
 
-이 README는 구조적 역할을 설명하는 문서다. 실제 공개 시에는 layer 수, activation, normalization, dropout, optimizer와 checkpoint format을 코드 및 config에서 고정해야 한다.
+This README focuses on the structural role of the model. For public release, the number of layers, activation functions, normalization, dropout, optimizer, and checkpoint format should be fixed in the code and configuration files.
 
 ---
 
 ## 7. Dataset and Cache Pipeline
 
-각 학습 sample은 실제 robot transition으로 구성된다.
+Each training sample consists of a real-robot transition.
 
 $$
 (X_t,a_t,X_{t+1}^{\mathrm{GT}})
 $$
 
-원본 JSONL을 학습할 때마다 읽고 DER rollout을 반복하면 큰 병목이 발생한다. 이를 해결하기 위해 `RopeCachedDataset` 구조를 사용하였다.
+Repeatedly reading the raw JSONL data and running DER rollouts during every epoch creates a substantial bottleneck. To address this, we used a `RopeCachedDataset` pipeline.
 
 ```text
 Raw JSONL transitions
@@ -203,7 +207,7 @@ Serialized cache file
 RopeCachedDataset → DataLoader → GNN training
 ```
 
-Cache에는 최소한 다음 항목이 포함되어야 한다.
+At minimum, the cache should include:
 
 - current rope state
 - action representation
@@ -213,7 +217,7 @@ Cache에는 최소한 다음 항목이 포함되어야 한다.
 - edge index
 - normalization metadata
 
-이 구조는 DER rollout을 epoch마다 다시 수행하지 않으므로 hidden dimension, loss weight와 network configuration의 반복 실험을 빠르게 만들었다.
+Because the DER rollout does not need to be repeated every epoch, this structure significantly accelerated repeated experiments with hidden dimensions, loss weights, and network configurations.
 
 ---
 
@@ -221,39 +225,39 @@ Cache에는 최소한 다음 항목이 포함되어야 한다.
 
 ### 8.1 Node-wise residual / position loss
 
-초기 목적은 node 위치 prediction을 개선하는 것이었다.
+The initial objective was to improve node-position prediction.
 
 $$
 L_{\mathrm{pos}}=\frac{1}{N}\sum_{i=0}^{N-1}\left\|\hat{x}_{i,t+1}-x_{i,t+1}^{\mathrm{GT}}\right\|_2^2
 $$
 
-Equivalent residual target loss로 표현하면 다음과 같다.
+The equivalent residual-target formulation is:
 
 $$
 L_{\mathrm{res}}=\frac{1}{N}\sum_i\left\|\Delta\hat{x}_{i,t+1}-\Delta x_{i,t+1}^{\mathrm{GT}}\right\|_2^2
 $$
 
-초기 모델은 node 위치 오차를 크게 줄였지만, 일부 prediction에서 edge가 비정상적으로 늘어나거나 줄어드는 문제가 남았다.
+The initial model substantially reduced node-position error, but some predictions still exhibited abnormal stretching or contraction of the rope edges.
 
 ### 8.2 Edge consistency diagnosis
 
-Edge length는 다음과 같이 계산한다.
+Edge length is computed as:
 
 $$
 l_i=\|x_{i+1}-x_i\|_2
 $$
 
-평균 상대 edge error는 다음과 같다.
+The mean relative edge error is:
 
 $$
 E_{\mathrm{edge}}=\frac{1}{N-1}\sum_i\frac{|l_i^{\mathrm{pred}}-l_i^{\mathrm{target}}|}{l_i^{\mathrm{target}}+\epsilon}
 $$
 
-한 분석에서는 DER 이후 평균 edge error가 5.98%였지만, 기존 residual correction 이후 15.88%까지 증가하였다. 이 결과는 position loss만으로는 rope length consistency가 자동으로 보존되지 않는다는 점을 보여주었다.
+In one analysis, the mean edge error after DER was 5.98%, but increased to 15.88% after the original residual correction. This showed that position loss alone does not automatically preserve rope-length consistency.
 
 ### 8.3 Target-edge loss
 
-초기 edge regularization을 강화하면서, 모든 edge를 하나의 일정한 rest length로 강제하는 대신 **각 sample의 실제 target state가 가진 edge length 분포**를 사용하였다.
+When strengthening edge regularization, rather than forcing every edge toward a single fixed rest length, we used the **edge-length distribution of the actual target state for each sample**.
 
 ```python
 target_edges = torch.norm(y_gt[:, 1:, :] - y_gt[:, :-1, :], dim=-1)
@@ -265,21 +269,23 @@ $$
 L_{\mathrm{edge}}=\frac{1}{N-1}\sum_i\left(l_i^{\mathrm{pred}}-l_i^{\mathrm{GT}}\right)^2
 $$
 
-최종 loss는 개념적으로 다음과 같다.
+Conceptually, the final loss is:
 
 $$
 L_{\mathrm{total}}=L_{\mathrm{pos}}+\lambda_{\mathrm{edge}}L_{\mathrm{edge}}
 $$
 
-`λ_edge`를 100, 500, 1000 수준에서 비교한 결과, weight 500이 edge consistency 개선과 position accuracy 사이에서 가장 적절한 기준 모델로 선택되었다.
+Comparing `λ_edge` values around 100, 500, and 1000 showed that weight 500 provided the most appropriate balance between improved edge consistency and position accuracy, and it was selected as the reference model.
 
 ---
 
 ## 9. Hidden Dimension Exploration
 
-<img src="../../../images/t2_gnn03.png" alt="Initial validation performance for DER and GNN hidden dimensions" width="760"/>
+<p align="center">
+  <img src="../../../images/t2_gnn03.png" alt="Initial validation performance for DER and GNN hidden dimensions" width="760"/>
+</p>
 
-Hidden dimension은 `64, 256, 1024, 4096` 후보를 탐색했다. 대표 validation에서는 1024-dimensional model이 4096 model보다 더 좋은 결과를 기록했다.
+Hidden dimensions of `64, 256, 1024, 4096` were explored. In a representative validation experiment, the 1024-dimensional model outperformed the 4096-dimensional model.
 
 | Model | Mean RMSE | Mean MAE | Mean node L2 |
 |---|---:|---:|---:|
@@ -287,58 +293,62 @@ Hidden dimension은 `64, 256, 1024, 4096` 후보를 탐색했다. 대표 validat
 | Residual GNN, hidden 1024 | **2.41 mm** | **1.92 mm** | **3.02 mm** |
 | Residual GNN, hidden 4096 | 3.36 mm | 2.71 mm | 4.31 mm |
 
-1024 model은 DER baseline 대비 RMSE를 5.26 mm 감소시켰다. 4096 model의 성능이 더 낮았다는 결과는 model capacity를 무조건 늘리는 것이 항상 유리하지 않으며, 데이터 규모와 regularization을 함께 고려해야 한다는 점을 보여준다.
+The 1024-dimensional model reduced RMSE by 5.26 mm relative to the DER baseline. The weaker performance of the 4096-dimensional model indicates that simply increasing model capacity is not always beneficial, and must be considered together with dataset size and regularization.
 
-> 이 표는 동일 순서의 validation sample 10개를 사용한 초기 비교 결과다. 이후 exp2/target-edge 실험은 다른 dataset과 protocol을 사용했으므로 수치를 직접 혼합해서는 안 된다.
+> This table reports an early comparison using the same ordered set of 10 validation samples. Later exp2/target-edge experiments used different datasets and evaluation protocols, so the values should not be compared directly across those experiments.
 
 ---
 
 ## 10. Target-Edge Model Results
 
-<img src="../../../images/t2_gnn04.png" alt="Position accuracy and edge consistency trade-off" width="800"/>
+<p align="center">
+  <img src="../../../images/t2_gnn04.png" alt="Position accuracy and edge consistency trade-off" width="800"/>
+</p>
 
-후속 실험에서는 위치 정확도가 우수한 `exp2 residual GNN`과 target-edge weight500 모델을 비교하였다.
+Later experiments compared the position-accurate `exp2 residual GNN` against the target-edge weight500 model.
 
 | Model | Position RMSE | Edge relative error | Total length relative error | Interpretation |
 |---|---:|---:|---:|---|
-| exp2 residual GNN | **3.07 mm** | 12.9% | 3.1% | Node position은 정확하지만 edge consistency가 약함 |
-| target-edge weight500 | 4.89 mm | **3.1%** | **0.77%** | 위치 RMSE는 증가했지만 rope length consistency가 크게 개선됨 |
+| exp2 residual GNN | **3.07 mm** | 12.9% | 3.1% | Accurate node positions, but weak edge consistency |
+| target-edge weight500 | 4.89 mm | **3.1%** | **0.77%** | Higher position RMSE, but substantially improved rope-length consistency |
 
-이 결과는 단일 RMSE만으로 dynamics model을 선택하면 안 된다는 점을 보여준다. Rope manipulation에서 예측된 point cloud가 target에 가까워도, edge length가 크게 왜곡되면 후속 rollout과 action ranking이 비현실적으로 변할 수 있다.
+These results show that a dynamics model should not be selected using RMSE alone. Even if the predicted point cloud is close to the target, significant edge-length distortion can make subsequent rollouts and action rankings physically unrealistic.
 
-따라서 최종 teacher generation에는 target-edge weight500 model을 사용하였다.
+For this reason, the target-edge weight500 model was used for final teacher generation.
 
 ---
 
 ## 11. Downstream MPC Effect
 
-<img src="../../../images/t2_gnn05.png" alt="Downstream 2-step MPC effect of target-edge GNN" width="900"/>
+<p align="center">
+  <img src="../../../images/t2_gnn05.png" alt="Downstream 2-step MPC effect of target-edge GNN" width="900"/>
+</p>
 
-Target-edge model은 standalone validation에서 position RMSE가 더 높았지만, 2-step MPC closed-loop에서는 더 좋은 결과를 보였다.
+Although the target-edge model had a higher standalone position RMSE, it produced better closed-loop performance when combined with 2-step MPC.
 
 | Metric | exp2 + 2-step MPC | target-edge w500 + 2-step MPC |
 |---|---:|---:|
-| Success rate | 약 0.8 | **약 0.9** |
-| Final mean error | 약 4.51 mm | **약 3.57 mm** |
-| Best mean error | 약 3.81 mm | **약 3.57 mm** |
-| Near-goal failure rate | 약 0.2 | **약 0.0** |
+| Success rate | Approximately 0.8 | **Approximately 0.9** |
+| Final mean error | Approximately 4.51 mm | **Approximately 3.57 mm** |
+| Best mean error | Approximately 3.81 mm | **Approximately 3.57 mm** |
+| Near-goal failure rate | Approximately 0.2 | **Approximately 0.0** |
 
-이는 transition model을 평가할 때 one-step prediction RMSE뿐 아니라 **closed-loop planning 결과**도 확인해야 한다는 의미다. Edge-consistent prediction은 다음 action candidate를 평가하는 과정에서 더 안정적인 state를 제공했다.
+This means that transition models should be evaluated not only using one-step prediction RMSE, but also through their **closed-loop planning performance**. Edge-consistent predictions provided more stable states for evaluating subsequent action candidates.
 
 ---
 
 ## 12. GNN Loss vs. Edge Projection
 
-Target-edge loss와 edge projection은 서로 다른 단계에서 작동한다.
+Target-edge loss and edge projection operate at different stages.
 
 | Component | Stage | Function |
 |---|---|---|
-| Target-edge loss | GNN training | Raw GNN prediction 자체가 target edge distribution을 보존하도록 학습 |
-| Goal edge projection | MPC rollout 후처리 | Predicted state를 target edge length에 가까워지도록 기하학적으로 보정 |
+| Target-edge loss | GNN training | Trains the raw GNN prediction itself to preserve the target edge-length distribution |
+| Goal edge projection | MPC rollout post-processing | Geometrically adjusts the predicted state toward target edge lengths |
 
-Projection OFF 조건에서 final edge relative error는 exp2가 약 0.103, target-edge w500이 약 0.052로 감소했다. Projection ON에서는 두 모델 모두 edge error가 거의 0에 가까워졌기 때문에, projection이 GNN의 raw 차이를 가렸다.
+With projection OFF, final edge relative error decreased from approximately 0.103 for exp2 to approximately 0.052 for target-edge w500. With projection ON, the edge error of both models became nearly zero, which masked the raw difference between the GNN predictions.
 
-따라서 target-edge GNN의 의미는 projection을 대체하는 것이 아니라, **projection이 수정해야 하는 원래 prediction의 왜곡을 줄이는 것**이다. Projection alpha에 대한 전체 ablation은 MPC 문서에서 다룬다.
+Therefore, the purpose of the target-edge GNN is not to replace projection, but to **reduce the distortion of the raw prediction before projection is applied**. The full projection-alpha ablation is documented in the MPC README.
 
 ---
 
@@ -365,18 +375,18 @@ def predict_next_state(current_nodes, action):
     return predicted_next
 ```
 
-MPC에서는 이 함수를 shortlist candidate마다 반복 호출한다. 따라서 inference speed, batch evaluation과 deterministic preprocessing이 중요하다.
+MPC calls this function repeatedly for each shortlisted candidate. Therefore, inference speed, batch evaluation, and deterministic preprocessing are important.
 
 ---
 
 ## 14. What Worked
 
-- DER baseline 대비 세부 node prediction 오차를 크게 감소시켰다.
-- 20-node chain graph를 통해 local deformation propagation을 표현했다.
-- Residual target을 사용해 learning scope를 물리 모델의 오차로 제한했다.
-- Cache dataset으로 반복 실험의 병목을 줄였다.
-- Target-edge loss로 raw prediction의 rope-length consistency를 개선했다.
-- Edge-consistent GNN을 사용했을 때 2-step MPC rollout 성능도 개선되었다.
+- Significantly reduced detailed node-prediction error relative to the DER baseline.
+- Represented local deformation propagation using a 20-node chain graph.
+- Restricted the learning scope to physics-model error through residual targets.
+- Reduced repeated-experiment bottlenecks using a cached dataset.
+- Improved rope-length consistency of raw predictions using target-edge loss.
+- Improved 2-step MPC rollout performance when using an edge-consistent GNN.
 
 ---
 
@@ -384,15 +394,15 @@ MPC에서는 이 함수를 shortlist candidate마다 반복 호출한다. 따라
 
 | Limitation | Effect |
 |---|---|
-| Dataset/domain dependence | 특정 rope, workspace와 action distribution에서 학습된 correction이 다른 재질에 그대로 일반화되지 않을 수 있음 |
-| Perception noise | Ground truth node 자체가 segmentation, skeletonization과 mapping error를 포함함 |
-| Endpoint uncertainty | Free endpoint는 작은 contact 차이에도 큰 displacement가 발생하여 예측 분산이 큼 |
-| One-step residual model | 장기 rollout에서 작은 bias가 누적될 수 있음 |
-| Fixed topology | 20-node ordering이 깨지거나 self-crossing에서 skeleton ordering이 잘못되면 graph input도 잘못됨 |
-| RMSE–physics trade-off | 위치 RMSE와 edge consistency를 동시에 최적화하기 위한 loss weight가 필요함 |
-| Projection dependency | MPC에서 projection을 강하게 사용하면 raw model quality가 평가 지표에서 가려질 수 있음 |
+| Dataset/domain dependence | Corrections learned for a particular rope, workspace, and action distribution may not generalize directly to other materials |
+| Perception noise | Ground-truth nodes themselves contain segmentation, skeletonization, and mapping errors |
+| Endpoint uncertainty | Small contact differences near the free endpoint can produce large displacements and higher prediction variance |
+| One-step residual model | Small bias can accumulate over long rollouts |
+| Fixed topology | If 20-node ordering fails or skeleton ordering becomes incorrect under self-crossing, the graph input is also corrupted |
+| RMSE–physics trade-off | A suitable loss weight is required to balance position RMSE and edge consistency |
+| Projection dependency | Strong projection in MPC can hide raw model-quality differences in evaluation metrics |
 
-Thicker red rope에서 최종 성능이 상대적으로 낮았던 점은 dynamics correction의 domain generalization과 runtime execution을 함께 개선해야 한다는 과제로 남았다.
+The relatively lower final performance on the thicker red rope remains an indication that both domain generalization of the dynamics correction and runtime execution require further improvement.
 
 ---
 
@@ -421,29 +431,28 @@ task2/dynamics/residual_gnn/
 ├── results/
 ```
 
-공개 전 반드시 고정해야 할 항목:
+The following must be fixed and documented before public release:
 
-- Node feature 순서와 dimension
-- Coordinate normalization과 workspace scale
-- Edge index 방향
-- Fixed endpoint mask
+- node-feature ordering and dimensions
+- coordinate normalization and workspace scale
+- edge-index direction
+- fixed-endpoint mask
 - DER checkpoint/config dependency
-- Hidden dimension과 message-passing layer 설정
-- `λ_edge` 및 target-edge definition
-- Train/validation split 기준
-- Cache schema/version
-- Model weight checksum
+- hidden dimension and message-passing layer configuration
+- `λ_edge` and target-edge definition
+- train/validation split criteria
+- cache schema/version
+- model-weight checksum
 
 ---
 
-
-> 모든 시각 자료는 repository 최상위 `images/` 폴더에서 공통 관리한다.
+> All visual assets are managed centrally in the repository-level `images/` directory.
 
 ## 17. Takeaway
 
 > **The Residual GNN preserves the DER physical prior while learning the systematic node-level correction required by the real rope.**
 
-K-DAS의 Residual GNN은 DER를 제거하고 pure neural dynamics로 대체한 모델이 아니다. DER가 제공하는 기본 구조 위에서 실제 로프의 friction, contact, endpoint propagation과 perception uncertainty로 인해 남는 residual을 graph message passing으로 학습하였다. 초기 모델은 node RMSE를 크게 줄였고, 이후 target-edge loss를 도입하여 위치 정확도와 rope-length consistency의 균형을 개선했다. 이 hybrid transition model은 최종적으로 2-step MPC teacher와 BC/RL policy를 구축하는 기반이 되었다.
+The K-DAS Residual GNN does not remove DER and replace it with pure neural dynamics. Instead, it learns the residual caused by friction, contact, endpoint propagation, and perception uncertainty through graph message passing on top of the physical structure provided by DER. The initial model significantly reduced node RMSE, and the later target-edge loss improved the balance between positional accuracy and rope-length consistency. This hybrid transition model ultimately became the foundation for the 2-step MPC teacher and the BC/RL policy.
 
 ---
 
