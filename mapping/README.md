@@ -266,33 +266,75 @@ $$
 
 약 150 mm 크기의 workspace를 기준으로 대부분의 off-grid error가 sub-millimeter 범위에 있었으며, 이 검증을 통해 **33 × 33 측정점 사이의 새로운 위치에서도 mapping을 사용할 수 있는지** 확인했다.
 
-### 8.2 Homography Overlap Check
+8.2 Homography Overlap Check
 
-Homography를 도입한 목적은 LUT가 정의되지 않는 workspace 바깥의 object corner나 rope node까지 좌표로 표현하는 것이었다. 하지만 gripper가 workspace 바깥으로 이동할 수 없기 때문에, outside coordinate에는 직접 비교할 ground truth `(x, y)`가 없다.
+Homography는 LUT가 정의되지 않는 workspace 바깥의 object corner나 rope node까지 동일한 좌표계로 표현하기 위해 도입했다. 그러나 gripper는 workspace 바깥으로 이동할 수 없기 때문에, 해당 영역에서는 직접 측정한 ground-truth (x, y)를 얻을 수 없다.
 
-따라서 검증 가능한 workspace 내부에서 calibration point를 **train region과 outer-band test region으로 분리**했다. 중앙부의 point만 이용해 homography를 계산한 뒤, 학습에 사용하지 않은 경계 영역의 known `(x, y)`를 얼마나 잘 복원하는지 비교했다.
+따라서 Homography의 정확도는 측정 가능한 workspace 내부에서 간접적으로 검증했다. 33 × 33 calibration point를 중앙의 train region과 그 바깥의 outer-band test region으로 나누고, train point만으로 Homography를 계산한 뒤 학습에 사용하지 않은 test point의 실제 (x, y)를 얼마나 정확하게 복원하는지 비교했다.
 
-```text
 33 × 33 measured correspondences
-→ use the center region to fit homography
-→ keep the outer band as test points
+→ select center points as train region
+→ fit homography using train points
+→ keep outer-band points for validation
 → pixel (u, v) → homography → predicted (x, y)
 → compare with measured test (x, y)
-```
 
-Train region의 크기를 세 가지로 바꾸어 확인했으며, homography를 구성할 때 더 넓은 calibration 영역을 포함할수록 boundary test error가 감소하는 경향을 확인했다. 대표적인 중간 설정의 결과는 다음과 같다.
+Train region의 크기를 세 단계로 변경하여, Homography를 계산할 때 포함되는 calibration 범위에 따라 경계 영역의 오차가 어떻게 달라지는지 확인했다.
 
-| Metric | Normalized | Approx. physical error (150 mm scale) |
-|---|---:|---:|
-| RMSE | 0.0027148 | 0.41 mm |
-| Mean error | 0.0023446 | 0.35 mm |
-| Maximum error | 0.0077049 | 1.16 mm |
-
+<p align="center"><b>Small train region (margin = 0.44)</b></p>
 <p align="center">
-  <img src="../images/map09.png" alt="Homography train-region and outer-band validation" width="980"/>
+  <img src="../images/homography_validation_small.png"
+       alt="Homography validation with small train region"
+       width="980"/>
 </p>
 
-실제 사용 시에는 일부 point만 사용하는 것이 아니라 **33 × 33 calibration의 1089개 correspondence 전체로 homography를 구성**했다. 이 overlap test가 workspace 바깥 좌표의 ground truth를 직접 보장하는 것은 아니지만, 측정 가능한 영역에서 homography가 기존 coordinate relation을 어느 정도 유지하는지 확인하는 검증으로 사용했다.
+Train 영역이 작을 경우에는 Homography를 계산하는 데 사용되는 대응점의 공간적 범위가 제한되면서, train 영역에서 멀어진 outer-band point에서 비교적 큰 오차가 나타났다.
+
+<p align="center"><b>Medium train region (margin = 0.24)</b></p>
+<p align="center">
+  <img src="../images/homography_validation_medium.png"
+       alt="Homography validation with medium train region"
+       width="980"/>
+</p>
+
+Train 영역을 넓히자 test 영역에서의 오차가 크게 감소했다. 이 조건에서 측정된 결과는 다음과 같다.
+
+Metric
+
+Normalized
+
+Approx. physical error (150 mm scale)
+
+RMSE
+
+0.0027148
+
+0.41 mm
+
+Mean error
+
+0.0023446
+
+0.35 mm
+
+Maximum error
+
+0.0077049
+
+1.16 mm
+
+<p align="center"><b>Large train region (margin = 0.08)</b></p>
+<p align="center">
+  <img src="../images/homography_validation_large.png"
+       alt="Homography validation with large train region"
+       width="980"/>
+</p>
+
+Train 영역을 workspace 경계 가까이까지 확장했을 때에도 남겨둔 outer-band point에서 비교적 안정적인 좌표 변환이 유지되는 것을 확인했다. 전체적으로 Homography를 구성할 때 더 넓은 calibration 영역을 포함할수록 경계 영역의 오차가 감소하는 경향을 보였다.
+
+실제 runtime에서는 일부 point만 사용하는 것이 아니라 33 × 33 calibration에서 측정한 1089개의 correspondence 전체를 사용해 Homography를 구성했다.
+
+이 검증이 workspace 바깥에서 생성된 좌표의 정확도를 직접 보장하는 것은 아니다. 다만 실제 좌표를 알고 있는 내부 영역에서 일부 calibration point를 의도적으로 제외한 뒤 이를 다시 예측해 봄으로써, Homography가 calibration 범위를 넘어갈 때 기존 pixel–workspace 관계를 어느 정도 유지하는지 확인하는 기준으로 사용했다.
 
 ---
 
