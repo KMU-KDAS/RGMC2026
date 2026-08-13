@@ -384,35 +384,4 @@ task2/policy/candidate_aware_rl/
 │   └── evaluate_rollout.py
 ├── models/README.md
 ├── results/
-```
 
-공개 시 반드시 고정해야 할 항목:
-
-- State tensor와 target-rope normalization
-- Node/length/theta bin ordering
-- BC filter definition
-- Episode/candidate JSONL schema
-- Candidate Q target formula와 clipping parameters
-- Actor/critic loss coefficients
-- Seed split, rollout threshold와 max steps
-- Residual GNN/MPC teacher version
-- Model weight checksum
-
----
-
-
-> 모든 시각 자료는 repository 최상위 `images/` 폴더에서 공통 관리한다.
-
-## 18. Takeaway
-
-> **Candidate-aware RL converts MPC’s internal candidate comparison into a fast policy that learns both the selected action and the relative quality of alternatives.**
-
-K-DAS의 RL policy는 단순히 MPC action을 복제한 classifier가 아니다. 2-step MPC가 평가한 selected/unselected candidates, ranking과 episode transition을 actor–critic learning에 함께 사용하였다. 초기에는 extreme candidate error가 critic을 발산시켰지만, qsafe의 relative Q scaling, clipping과 lower bound를 통해 학습을 안정화하였다. 이후 target-edge w500 teacher로 재학습하면서 best mean error와 rope edge consistency가 개선되었고, 최종적으로 runtime safety 계층과 결합 가능한 빠른 action policy를 구축하였다.
-
----
-
-## References
-
-1. K-DAS Task 2, 9주차 활동보고서: 2-step MPC dataset, candidate-aware RL, qsafe stabilization and rollout analysis.
-2. K-DAS Task 2, 10주차 활동보고서: target-edge w500 teacher, BC/RL retraining and policy comparison.
-3. K-DAS Task 2 project summary and final report.
