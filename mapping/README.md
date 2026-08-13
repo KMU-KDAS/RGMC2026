@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="../images/map01.png" alt="CloudGripper robot-specific mapping and matching workflow" width="980"/>
+  <img src="../images/map01.png" alt="Robot-specific map generation, automatic matching, and runtime workflow" width="980"/>
 </p>
 
 # Robot-Specific Mapping and Automatic Matching for CloudGripper
@@ -67,7 +67,6 @@ CloudGripper의 command coordinate는 공통적으로 normalized `(x, y)`를 사
 
 Test period에는 현재 연결된 robot 번호를 알고 있었기 때문에 해당 robot의 map을 미리 생성할 수 있었다. Competition에서는 robot 번호가 주어지지 않았기 때문에, 준비한 map들 중 현재 robot에 맞는 map을 자동으로 찾아야 했다.
 
-<!-- Overview image at the top (map01) should also show that the same normalized workspace appears differently across robot cameras. -->
 
 ---
 
@@ -87,7 +86,7 @@ Map을 생성하려면 robot을 특정 `(x, y)`로 이동시킨 뒤, camera imag
 | mAP50-95 | 0.930 | 0.794 |
 
 <p align="center">
-  <img src="../images/map02.png" alt="YOLOv8 segmentation and gripper centroid" width="760"/>
+  <img src="../images/map15.png" alt="YOLO-based gripper detection" width="760"/>
 </p>
 
 YOLO detector는 map 생성뿐 아니라 competition 시작 시 현재 gripper 위치를 검출해 robot map을 matching할 때도 사용했다.
@@ -100,7 +99,6 @@ YOLO detector는 map 생성뿐 아니라 competition 시작 시 현재 gripper �
   <img src="../images/map03.png" alt="Gripper detection at robot-specific mapping points" width="900"/>
 </p>
 
-<!-- map03: show representative gripper detections at several commanded positions -->
 
 각 robot에 대해 gripper가 이동 가능한 workspace를 **33 × 33 grid**로 나누고, 총 1089개 위치에서 robot coordinate와 gripper pixel coordinate의 대응 관계를 측정했다.
 
@@ -119,7 +117,14 @@ Command robot to (x, y)
   <img src="../images/map06.png" alt="33 by 33 robot-specific mapping grid" width="760"/>
 </p>
 
-<!-- map06: emphasize the 33×33 measured grid and the (u,v) ↔ (x,y) correspondence -->
+<p align="center">
+  <img src="../images/map14.png" alt="Indexed calibration samples from the 33 by 33 mapping process" width="760"/>
+</p>
+
+<p align="center">
+  <sub>Each marker corresponds to one measured pixel–workspace pair stored in calibration.csv.</sub>
+</p>
+
 
 결과적으로 각 robot마다 다음과 같은 measured correspondence가 만들어진다.
 
@@ -139,7 +144,6 @@ Competition 시작 후 robot마다 다시 33 × 33 map을 생성하는 것은 �
 
 K-DAS는 competition 시작 시 **gripper를 calibration 목적으로 움직이지 않고 현재 위치 그대로 사용**했다.
 
-<!-- TODO: replace the flow below with ../images/map11.png: first-frame automatic robot/map matching -->
 
 ```text
 Competition starts
@@ -171,7 +175,7 @@ x=f_x(u,v), \qquad y=f_y(u,v)
 $$
 
 <p align="center">
-  <img src="../images/map07.png" alt="Interpolation from measured pixel-workspace correspondences" width="920"/>
+  <img src="../images/map07.png" alt="Clough-Tocher interpolation from measured calibration points to runtime coordinates" width="920"/>
 </p>
 
 Runtime에서는 선택된 robot map을 load한 뒤, 측정된 calibration point 사이를 보간해 `(x, y)`를 계산했다.
@@ -218,7 +222,7 @@ $$
 $$
 
 <p align="center">
-  <img src="../images/map10.png" alt="Reachable workspace and homography-based extended coordinates" width="900"/>
+  <img src="../images/map10.png" alt="Reachable control coordinates and homography-based extended state coordinates" width="900"/>
 </p>
 
 Homography를 이용하면 gripper가 직접 갈 수 없는 영역에 있는 object corner나 rope node도 하나의 coordinate system으로 표현할 수 있다.
@@ -326,7 +330,6 @@ Train 영역을 workspace 경계 가까이까지 확장했을 때에도 남겨�
 
 ## 9. Use in Task 1 and Task 2
 
-<!-- TODO: add a combined Task 1 / Task 2 application figure (e.g. ../images/map12.png) showing detected pixels → normalized coordinates → planning input -->
 
 ### Task 1 — Rigid Object Pushing
 
